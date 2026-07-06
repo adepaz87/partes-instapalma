@@ -731,6 +731,26 @@ def descargar_pdf(parte_id):
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
+@app.route('/admin/insert', methods=['POST'])
+def admin_insert():
+    try:
+        datos = request.get_json()
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (
+            datos.get('numero_parte'), datos.get('fecha'), datos.get('operario'),
+            datos.get('cliente'), datos.get('obra'), datos.get('operarios'),
+            datos.get('albaranes'), datos.get('material_stock'), datos.get('descripcion'),
+            datos.get('terminado'), datos.get('tiempo_restante')
+        ))
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/migrate', methods=['GET'])
 def migrate():
     try:
