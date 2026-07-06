@@ -507,15 +507,31 @@ def webhook():
         )
 
     elif paso == 'operarios':
-        set_dato(numero, 'operarios', incoming_msg)
-        set_paso(numero, 'albaranes')
-        msg.body(
-            "4️⃣ *Albaranes*\n\n"
-            "Escribe los albaranes, uno por línea:\n"
-            "_Ejemplo:_\n"
-            "DIEXFE — 3547364\n\n"
-            "Si no hay, escribe: *ninguno*"
-        )
+        # Validar que cada línea tenga horas (número seguido de h, hrs, horas, etc.)
+        import re
+        lineas = [l.strip() for l in incoming_msg.strip().split('\n') if l.strip()]
+        sin_horas = []
+        for linea in lineas:
+            if not re.search(r'\d+\s*h', linea, re.IGNORECASE):
+                sin_horas.append(linea)
+        if sin_horas:
+            lista = '\n'.join(f'• {l}' for l in sin_horas)
+            msg.body(
+                f"⚠️ Faltan las *horas* en:\n{lista}\n\n"
+                "Escríbelo así:\n"
+                "_NOMBRE — 8h_\n\n"
+                "Vuelve a escribir todos los operarios con sus horas:"
+            )
+        else:
+            set_dato(numero, 'operarios', incoming_msg)
+            set_paso(numero, 'albaranes')
+            msg.body(
+                "4️⃣ *Albaranes*\n\n"
+                "Escribe los albaranes, uno por línea:\n"
+                "_Ejemplo:_\n"
+                "DIEXFE — 3547364\n\n"
+                "Si no hay, escribe: *ninguno*"
+            )
 
     elif paso == 'albaranes':
         val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
