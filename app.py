@@ -106,9 +106,9 @@ GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
 
 # Directorio de operarios: número → nombre
 OPERARIOS = {
-    '34636606175': 'Carlos Jonathan',
+    '34636606175': 'Jonathan Rodríguez',
     '34616233640': 'Toño Guardia',
-    '34666123020': 'Antonio',
+    '34666123020': 'Antonio J. Pérez',
     '34689448068': 'Airam',
     '34616908968': 'Moisés',
     '34628380158': 'Petter',
