@@ -616,7 +616,7 @@ def listar_partes():
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
+        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, terminado, tiempo_restante, created_at, pdf_descargado, pdf_descargado_at FROM partes ORDER BY created_at DESC LIMIT 200")
         rows = cur.fetchall()
         cur.close(); conn.close()
     except:
@@ -627,7 +627,13 @@ def listar_partes():
         terminado = r[6] or ''
         es_ok = 'í' in terminado.lower() or terminado.lower() == 'si'
         badge = '<span class="badge-ok">✓ Terminado</span>' if es_ok else f'<span class="badge-curso">🔄 {r[7] or "En curso"}</span>'
-        operario_limpio = (r[3] or '').replace('whatsapp:','')
+        operario_limpio = (r[3] or '').replace('whatsapp:','').replace('+34','')
+        descargado = r[9]
+        desc_at = str(r[10])[:16].replace('T',' ') if r[10] else ''
+        if descargado:
+            pdf_badge = f'<span title="Descargado {desc_at}" style="color:#2e7d32;font-size:18px" title="{desc_at}">⬇️</span>'
+        else:
+            pdf_badge = '<span style="color:#ccc;font-size:18px">—</span>'
         filas += f'<tr class="clickable" onclick="window.location=\'/partes/{r[0]}\'">' \
                  f'<td><strong>{r[1] or ""}</strong></td>' \
                  f'<td>{r[2] or ""}</td>' \
@@ -635,16 +641,18 @@ def listar_partes():
                  f'<td><strong>{r[4] or ""}</strong></td>' \
                  f'<td>{r[5] or ""}</td>' \
                  f'<td>{badge}</td>' \
+                 f'<td style="text-align:center">{pdf_badge}</td>' \
                  f'</tr>'
 
     total = len(rows)
     n_ok = sum(1 for r in rows if r[6] and ('í' in r[6].lower() or r[6].lower()=='si'))
     n_curso = sum(1 for r in rows if r[6] and 'no' in r[6].lower())
+    n_pdf = sum(1 for r in rows if r[9])
 
     tabla = "<p class='empty'>No hay partes registrados aún.</p>" if not rows else f"""
   <table>
     <thead><tr>
-      <th>Nº Parte</th><th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th><th>Estado</th>
+      <th>Nº Parte</th><th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th><th>Estado</th><th>PDF</th>
     </tr></thead>
     <tbody>{filas}</tbody>
   </table>"""
@@ -663,6 +671,7 @@ def listar_partes():
   <div class="stat"><div class="num">{total}</div><div class="lbl">Total partes</div></div>
   <div class="stat"><div class="num">{n_ok}</div><div class="lbl">Terminados</div></div>
   <div class="stat"><div class="num">{n_curso}</div><div class="lbl">En curso</div></div>
+  <div class="stat"><div class="num">{n_pdf}</div><div class="lbl">PDFs descargados</div></div>
 </div>
 <div class="wrap">{tabla}</div>
 </body></html>"""
@@ -727,6 +736,15 @@ def descargar_pdf(parte_id):
     }
     pdf_bytes = generar_pdf(datos)
     nombre = f"parte_{r[1]}_{(r[5] or 'obra').replace(' ','_')}.pdf"
+    # Marcar como descargado
+    try:
+        from datetime import datetime as dt
+        conn2 = get_db(); cur2 = conn2.cursor()
+        cur2.execute("UPDATE partes SET pdf_descargado=TRUE, pdf_descargado_at=%s WHERE id=%s",
+                    (dt.utcnow(), parte_id))
+        conn2.commit(); cur2.close(); conn2.close()
+    except Exception:
+        pass
     from flask import Response
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
@@ -756,7 +774,7 @@ def migrate():
     try:
         conn = get_db()
         cur = conn.cursor()
-        for col, tipo in [('material_stock','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT')]:
+        for col, tipo in [('material_stock','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT'), ('pdf_descargado','BOOLEAN DEFAULT FALSE'), ('pdf_descargado_at','TIMESTAMP')]:
             try:
                 cur.execute(f"ALTER TABLE partes ADD COLUMN IF NOT EXISTS {col} {tipo}")
                 conn.commit()
