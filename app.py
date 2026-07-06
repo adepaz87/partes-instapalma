@@ -67,6 +67,7 @@ def guardar_parte(datos, numero_operario):
         cur.execute("""
             INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
         """, (
             datos.get('numero_parte'),
             datos.get('fecha'),
@@ -80,14 +81,15 @@ def guardar_parte(datos, numero_operario):
             datos.get('terminado'),
             datos.get('tiempo_restante'),
         ))
+        parte_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
         conn.close()
-        print("Parte guardado en DB OK")
-        return True
+        print(f"Parte guardado en DB OK — id={parte_id}")
+        return parte_id
     except Exception as e:
         print(f"Error guardando parte: {e}")
-        return False
+        return None
 
 with app.app_context():
     init_db()
@@ -367,10 +369,13 @@ def enviar_email_gmail(datos, numero_operario):
         print(f"Error notificando a Zapia: {e}")
         return False
 
-def enviar_whatsapp(destino, mensaje):
+def enviar_whatsapp(destino, mensaje, media_url=None):
     try:
         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        client.messages.create(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
+        kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
+        if media_url:
+            kwargs['media_url'] = [media_url]
+        client.messages.create(**kwargs)
     except Exception as e:
         print(f"Error WA: {e}")
 
@@ -422,10 +427,21 @@ def finalizar_parte(numero, datos):
     )
     enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
 
-    # Guardar en base de datos
-    guardar_parte(datos, numero)
+    # Guardar en base de datos y obtener el ID para la URL del PDF
+    parte_id = guardar_parte(datos, numero)
 
-    # Mensaje especial para que Zapia genere el PDF y lo envíe por email
+    # Enviar PDF directamente a tu WhatsApp como archivo adjunto
+    BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
+    if parte_id:
+        pdf_url = f"https://{BOT_URL}/partes/{parte_id}/pdf"
+        caption = (
+            f"📄 *Parte Nº {datos['numero_parte']}* — {datos['fecha']}\n"
+            f"🏢 {datos['cliente']} | 🔨 {datos['obra']}\n"
+            f"🏁 {linea_term}"
+        )
+        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+
+    # Mensaje especial para que Zapia envíe al grupo Instapalma y por email
     payload = json.dumps({
         "tipo": "PARTE_CONFIRMADO",
         "numero_parte": datos['numero_parte'],
@@ -439,7 +455,8 @@ def finalizar_parte(numero, datos):
         "descripcion": desc,
         "terminado": linea_term,
         "enviar_grupo_instapalma": True,
-        "grupo_jid": "34690875940-1553511485@g.us"
+        "grupo_jid": "34690875940-1553511485@g.us",
+        "pdf_url": f"https://{BOT_URL}/partes/{parte_id}/pdf" if parte_id else None
     }, ensure_ascii=False)
     enviar_whatsapp(SUPERVISOR_WA, f"[ZAPIA_PDF]{payload}[/ZAPIA_PDF]")
 
