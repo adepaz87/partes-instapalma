@@ -438,6 +438,8 @@ def finalizar_parte(numero, datos):
         "material_stock": mat,
         "descripcion": desc,
         "terminado": linea_term,
+        "enviar_grupo_instapalma": True,
+        "grupo_jid": "34690875940-1553511485@g.us"
     }, ensure_ascii=False)
     enviar_whatsapp(SUPERVISOR_WA, f"[ZAPIA_PDF]{payload}[/ZAPIA_PDF]")
 
