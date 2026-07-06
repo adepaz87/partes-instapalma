@@ -462,13 +462,7 @@ def finalizar_parte(numero, datos):
     # Guardar en base de datos y obtener el ID para la URL del PDF
     parte_id = guardar_parte(datos, numero)
 
-    # Generar PDF en memoria para adjuntar al email
-    pdf_bytes = generar_pdf(datos)
-
-    # Enviar email con PDF adjunto directamente desde Railway
-    enviar_email_gmail(datos, numero, pdf_bytes=pdf_bytes)
-
-    # Enviar PDF directamente a tu WhatsApp como archivo adjunto
+    # Enviar PDF a tu WhatsApp y al operario
     BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
     if parte_id:
         pdf_url = f"https://{BOT_URL}/partes/{parte_id}/pdf"
@@ -478,29 +472,10 @@ def finalizar_parte(numero, datos):
             f"🏁 {linea_term}"
         )
         enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
-        # Enviar copia del PDF también al operario
-        enviar_whatsapp(f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero,
+        operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
+        enviar_whatsapp(operario_wa,
                         f"✅ *Parte Nº {datos['numero_parte']} confirmado*\nAquí tienes tu copia en PDF:",
                         media_url=pdf_url)
-
-    # Notificar a Zapia para que envíe al grupo Instapalma
-    payload = json.dumps({
-        "tipo": "PARTE_CONFIRMADO",
-        "numero_parte": datos['numero_parte'],
-        "fecha": datos['fecha'],
-        "operario": numero,
-        "cliente": datos['cliente'],
-        "obra": datos['obra'],
-        "operarios": ops,
-        "albaranes": albs,
-        "material_stock": mat,
-        "descripcion": desc,
-        "terminado": linea_term,
-        "enviar_grupo_instapalma": True,
-        "grupo_jid": "34690875940-1553511485@g.us",
-        "pdf_url": f"https://{BOT_URL}/partes/{parte_id}/pdf" if parte_id else None
-    }, ensure_ascii=False)
-    enviar_whatsapp(SUPERVISOR_WA, f"[ZAPIA_PDF]{payload}[/ZAPIA_PDF]")
 
     del conversaciones[numero]
 
