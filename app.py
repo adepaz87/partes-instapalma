@@ -551,114 +551,185 @@ def webhook():
 
     return str(resp)
 
+CSS_BASE = """
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
+  header { background: #1a3a5c; color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 22px; font-weight: 700; }
+  header p { font-size: 13px; opacity: .75; margin-top: 2px; }
+  .stats { display: flex; gap: 16px; padding: 20px 30px; flex-wrap: wrap; }
+  .stat { background: white; border-radius: 10px; padding: 16px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .stat .num { font-size: 28px; font-weight: 700; color: #1a3a5c; }
+  .stat .lbl { font-size: 12px; color: #888; margin-top: 2px; }
+  .wrap { padding: 0 30px 30px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); font-size: 13px; }
+  th { background: #1a3a5c; color: white; padding: 12px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }
+  td { padding: 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr.clickable:hover td { background: #eef3fa; cursor: pointer; }
+  .badge-ok { background:#2e7d32; color:white; padding:3px 10px; border-radius:10px; font-size:11px; white-space:nowrap; }
+  .badge-curso { background:#e65100; color:white; padding:3px 10px; border-radius:10px; font-size:11px; white-space:nowrap; }
+  .empty { text-align: center; padding: 60px; color: #aaa; font-size: 15px; }
+  .back { display:inline-block; margin:20px 30px 0; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px; }
+  .back:hover { text-decoration:underline; }
+  .ficha { max-width: 800px; margin: 24px auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.1); overflow: hidden; }
+  .ficha-header { background: #1a3a5c; color: white; padding: 20px 28px; }
+  .ficha-header h2 { font-size: 20px; }
+  .ficha-header p { font-size: 13px; opacity: .75; margin-top: 4px; }
+  .ficha-body { padding: 28px; }
+  .campo { margin-bottom: 18px; }
+  .campo label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#888; margin-bottom:4px; }
+  .campo .val { font-size:15px; color:#222; white-space:pre-line; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .estado-ok { background:#e8f5e9; border:1px solid #a5d6a7; border-radius:8px; padding:14px 20px; text-align:center; font-weight:700; color:#2e7d32; font-size:16px; }
+  .estado-curso { background:#fff3e0; border:1px solid #ffcc80; border-radius:8px; padding:14px 20px; text-align:center; font-weight:700; color:#e65100; font-size:16px; }
+  .btn-pdf { display:inline-block; margin-top:20px; background:#1a3a5c; color:white; padding:10px 22px; border-radius:8px; text-decoration:none; font-size:14px; font-weight:600; }
+  .btn-pdf:hover { background:#14304f; }
+  @media (max-width:600px) { .grid2 { grid-template-columns:1fr; } .wrap { padding:0 12px 20px; } header h1 { font-size:17px; } }
+"""
+
+def get_parte_by_id(parte_id):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes WHERE id=%s", (parte_id,))
+        r = cur.fetchone()
+        cur.close(); conn.close()
+        return r
+    except:
+        return None
+
 @app.route('/partes', methods=['GET'])
 def listar_partes():
-    # Si piden JSON (API), devolver JSON
-    if request.headers.get('Accept', '').startswith('application/json') or request.args.get('format') == 'json':
+    if request.args.get('format') == 'json':
         try:
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
+            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
             rows = cur.fetchall()
             cur.close(); conn.close()
-            partes = []
-            for r in rows:
-                partes.append({
-                    'numero_parte': r[0], 'fecha': r[1], 'operario': r[2],
-                    'cliente': r[3], 'obra': r[4], 'operarios': r[5],
-                    'albaranes': r[6], 'material_stock': r[7], 'descripcion': r[8],
-                    'terminado': r[9], 'tiempo_restante': r[10], 'created_at': str(r[11])
-                })
+            partes = [{'id':r[0],'numero_parte':r[1],'fecha':r[2],'operario':r[3],'cliente':r[4],'obra':r[5],'operarios':r[6],'albaranes':r[7],'material_stock':r[8],'descripcion':r[9],'terminado':r[10],'tiempo_restante':r[11],'created_at':str(r[12])} for r in rows]
             return {'partes': partes, 'total': len(partes)}, 200
         except Exception as e:
             return {'error': str(e)}, 500
 
-    # Si no, devolver HTML visual
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
+        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
         rows = cur.fetchall()
         cur.close(); conn.close()
-    except Exception as e:
+    except:
         rows = []
 
     filas = ""
     for r in rows:
-        terminado = r[9] or ''
-        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:10px;font-size:11px">✓ Terminado</span>' \
-            if 'í' in terminado.lower() or 'si' in terminado.lower() \
-            else f'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:10px;font-size:11px">🔄 {r[10] or "En curso"}</span>'
-        ops = (r[5] or '').replace('\n','<br>')
-        alb = (r[6] or '').replace('\n','<br>')
-        mat = (r[7] or '').replace('\n','<br>')
-        filas += f"""
-        <tr>
-            <td>{r[0] or ''}</td>
-            <td>{r[1] or ''}</td>
-            <td style="font-size:11px;color:#666">{(r[2] or '').replace('whatsapp:','')}</td>
-            <td><strong>{r[3] or ''}</strong></td>
-            <td>{r[4] or ''}</td>
-            <td style="font-size:12px">{ops}</td>
-            <td style="font-size:12px">{alb}</td>
-            <td style="font-size:12px">{mat}</td>
-            <td style="font-size:12px">{r[8] or ''}</td>
-            <td>{badge}</td>
-        </tr>"""
+        terminado = r[6] or ''
+        es_ok = 'í' in terminado.lower() or terminado.lower() == 'si'
+        badge = '<span class="badge-ok">✓ Terminado</span>' if es_ok else f'<span class="badge-curso">🔄 {r[7] or "En curso"}</span>'
+        operario_limpio = (r[3] or '').replace('whatsapp:','')
+        filas += f'<tr class="clickable" onclick="window.location=\'/partes/{r[0]}\'">' \
+                 f'<td><strong>{r[1] or ""}</strong></td>' \
+                 f'<td>{r[2] or ""}</td>' \
+                 f'<td style="font-size:11px;color:#666">{operario_limpio}</td>' \
+                 f'<td><strong>{r[4] or ""}</strong></td>' \
+                 f'<td>{r[5] or ""}</td>' \
+                 f'<td>{badge}</td>' \
+                 f'</tr>'
 
     total = len(rows)
+    n_ok = sum(1 for r in rows if r[6] and ('í' in r[6].lower() or r[6].lower()=='si'))
+    n_curso = sum(1 for r in rows if r[6] and 'no' in r[6].lower())
+
+    tabla = "<p class='empty'>No hay partes registrados aún.</p>" if not rows else f"""
+  <table>
+    <thead><tr>
+      <th>Nº Parte</th><th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th><th>Estado</th>
+    </tr></thead>
+    <tbody>{filas}</tbody>
+  </table>"""
+
     html = f"""<!DOCTYPE html>
 <html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Partes de Trabajo — Instapalma</title>
-<style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }}
-  header {{ background: #1a3a5c; color: white; padding: 20px 30px; display: flex; align-items: center; gap: 16px; }}
-  header h1 {{ font-size: 22px; font-weight: 700; }}
-  header p {{ font-size: 13px; opacity: .75; }}
-  .stats {{ display: flex; gap: 16px; padding: 20px 30px; }}
-  .stat {{ background: white; border-radius: 10px; padding: 16px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
-  .stat .num {{ font-size: 28px; font-weight: 700; color: #1a3a5c; }}
-  .stat .lbl {{ font-size: 12px; color: #888; margin-top: 2px; }}
-  .wrap {{ padding: 0 30px 30px; overflow-x: auto; }}
-  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); font-size: 13px; }}
-  th {{ background: #1a3a5c; color: white; padding: 12px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }}
-  td {{ padding: 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }}
-  tr:last-child td {{ border-bottom: none; }}
-  tr:hover td {{ background: #f7f9fc; }}
-  .empty {{ text-align: center; padding: 60px; color: #aaa; font-size: 15px; }}
-  @media (max-width: 768px) {{ .stats {{ flex-wrap: wrap; }} header h1 {{ font-size: 18px; }} }}
-</style>
+<style>{CSS_BASE}</style>
 </head>
 <body>
 <header>
-  <div>
-    <h1>⚡ Partes de Trabajo — Instapalma</h1>
-    <p>Panel de control · Actualización en tiempo real</p>
-  </div>
+  <div><h1>⚡ Partes de Trabajo — Instapalma</h1><p>Panel de control · Haz clic en un parte para ver el detalle</p></div>
 </header>
 <div class="stats">
-  <div class="stat"><div class="num">{total}</div><div class="lbl">Partes totales</div></div>
-  <div class="stat"><div class="num">{sum(1 for r in rows if r[9] and ('í' in r[9].lower() or 'si' in r[9].lower()))}</div><div class="lbl">Terminados</div></div>
-  <div class="stat"><div class="num">{sum(1 for r in rows if r[9] and 'no' in r[9].lower())}</div><div class="lbl">En curso</div></div>
+  <div class="stat"><div class="num">{total}</div><div class="lbl">Total partes</div></div>
+  <div class="stat"><div class="num">{n_ok}</div><div class="lbl">Terminados</div></div>
+  <div class="stat"><div class="num">{n_curso}</div><div class="lbl">En curso</div></div>
 </div>
-<div class="wrap">
-{"<p class='empty'>No hay partes registrados aún.</p>" if not rows else f"""
-  <table>
-    <thead><tr>
-      <th>Nº Parte</th><th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th>
-      <th>Operarios</th><th>Albaranes</th><th>Material Stock</th><th>Descripción</th><th>Estado</th>
-    </tr></thead>
-    <tbody>{filas}</tbody>
-  </table>"""}
+<div class="wrap">{tabla}</div>
+</body></html>"""
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@app.route('/partes/<int:parte_id>', methods=['GET'])
+def ver_parte(parte_id):
+    r = get_parte_by_id(parte_id)
+    if not r:
+        return "<p style='padding:40px;font-family:sans-serif'>Parte no encontrado.</p>", 404
+
+    terminado = r[10] or ''
+    es_ok = 'í' in terminado.lower() or terminado.lower() == 'si'
+    estado_html = f'<div class="estado-ok">✅ TRABAJO TERMINADO</div>' if es_ok \
+        else f'<div class="estado-curso">🔄 EN CURSO — Tiempo restante: {r[11] or "no especificado"}</div>'
+    operario_limpio = (r[3] or '').replace('whatsapp:','')
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parte {r[1]} — Instapalma</title>
+<style>{CSS_BASE}</style>
+</head>
+<body>
+<header>
+  <div><h1>⚡ Instapalma — Ficha de Parte</h1><p>Detalle completo del parte de trabajo</p></div>
+</header>
+<a class="back" href="/partes">← Volver al listado</a>
+<div class="ficha">
+  <div class="ficha-header">
+    <h2>Parte Nº {r[1]}</h2>
+    <p>Fecha: {r[2] or '—'} &nbsp;·&nbsp; Registrado: {str(r[12])[:16] if r[12] else '—'}</p>
+  </div>
+  <div class="ficha-body">
+    <div class="grid2">
+      <div class="campo"><label>Cliente</label><div class="val">{r[4] or '—'}</div></div>
+      <div class="campo"><label>Obra</label><div class="val">{r[5] or '—'}</div></div>
+      <div class="campo"><label>Operario (WhatsApp)</label><div class="val">{operario_limpio}</div></div>
+    </div>
+    <div class="campo"><label>Operarios y horas</label><div class="val">{r[6] or '—'}</div></div>
+    <div class="campo"><label>Albaranes</label><div class="val">{r[7] or '—'}</div></div>
+    <div class="campo"><label>Material de stock</label><div class="val">{r[8] or '—'}</div></div>
+    <div class="campo"><label>Descripción de trabajos</label><div class="val">{r[9] or '—'}</div></div>
+    {estado_html}
+    <a class="btn-pdf" href="/partes/{parte_id}/pdf">⬇ Descargar PDF</a>
+  </div>
 </div>
-</body>
-</html>"""
-    headers = {'Content-Type': 'text/html; charset=utf-8'}
-    return html, 200, headers
+</body></html>"""
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@app.route('/partes/<int:parte_id>/pdf', methods=['GET'])
+def descargar_pdf(parte_id):
+    r = get_parte_by_id(parte_id)
+    if not r:
+        return "Parte no encontrado", 404
+    datos = {
+        'numero_parte': r[1], 'fecha': r[2], 'cliente': r[4], 'obra': r[5],
+        'operarios': r[6] or '', 'albaranes': r[7] or '', 'material_stock': r[8] or '',
+        'descripcion': r[9] or '', 'terminado': r[10] or '', 'tiempo_restante': r[11] or ''
+    }
+    pdf_bytes = generar_pdf(datos)
+    nombre = f"parte_{r[1]}_{(r[5] or 'obra').replace(' ','_')}.pdf"
+    from flask import Response
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
 @app.route('/health', methods=['GET'])
 def health():
