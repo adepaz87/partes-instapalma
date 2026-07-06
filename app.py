@@ -657,7 +657,8 @@ def listar_partes():
 </div>
 </body>
 </html>"""
-    return html, 200, {{'Content-Type': 'text/html; charset=utf-8'}}
+    headers = {'Content-Type': 'text/html; charset=utf-8'}
+    return html, 200, headers
 
 @app.route('/health', methods=['GET'])
 def health():
