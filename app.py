@@ -553,24 +553,111 @@ def webhook():
 
 @app.route('/partes', methods=['GET'])
 def listar_partes():
+    # Si piden JSON (API), devolver JSON
+    if request.headers.get('Accept', '').startswith('application/json') or request.args.get('format') == 'json':
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
+            rows = cur.fetchall()
+            cur.close(); conn.close()
+            partes = []
+            for r in rows:
+                partes.append({
+                    'numero_parte': r[0], 'fecha': r[1], 'operario': r[2],
+                    'cliente': r[3], 'obra': r[4], 'operarios': r[5],
+                    'albaranes': r[6], 'material_stock': r[7], 'descripcion': r[8],
+                    'terminado': r[9], 'tiempo_restante': r[10], 'created_at': str(r[11])
+                })
+            return {'partes': partes, 'total': len(partes)}, 200
+        except Exception as e:
+            return {'error': str(e)}, 500
+
+    # Si no, devolver HTML visual
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT numero_parte, fecha, operario, cliente, obra, operarios, albaranes, descripcion, created_at FROM partes ORDER BY created_at DESC LIMIT 50")
+        cur.execute("SELECT numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
         rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        partes = []
-        for r in rows:
-            partes.append({
-                'numero_parte': r[0], 'fecha': r[1], 'operario': r[2],
-                'cliente': r[3], 'obra': r[4], 'operarios': r[5],
-                'albaranes': r[6], 'descripcion': r[7],
-                'created_at': str(r[8])
-            })
-        return {'partes': partes, 'total': len(partes)}, 200
+        cur.close(); conn.close()
     except Exception as e:
-        return {'error': str(e)}, 500
+        rows = []
+
+    filas = ""
+    for r in rows:
+        terminado = r[9] or ''
+        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:10px;font-size:11px">✓ Terminado</span>' \
+            if 'í' in terminado.lower() or 'si' in terminado.lower() \
+            else f'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:10px;font-size:11px">🔄 {r[10] or "En curso"}</span>'
+        ops = (r[5] or '').replace('\n','<br>')
+        alb = (r[6] or '').replace('\n','<br>')
+        mat = (r[7] or '').replace('\n','<br>')
+        filas += f"""
+        <tr>
+            <td>{r[0] or ''}</td>
+            <td>{r[1] or ''}</td>
+            <td style="font-size:11px;color:#666">{(r[2] or '').replace('whatsapp:','')}</td>
+            <td><strong>{r[3] or ''}</strong></td>
+            <td>{r[4] or ''}</td>
+            <td style="font-size:12px">{ops}</td>
+            <td style="font-size:12px">{alb}</td>
+            <td style="font-size:12px">{mat}</td>
+            <td style="font-size:12px">{r[8] or ''}</td>
+            <td>{badge}</td>
+        </tr>"""
+
+    total = len(rows)
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Partes de Trabajo — Instapalma</title>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }}
+  header {{ background: #1a3a5c; color: white; padding: 20px 30px; display: flex; align-items: center; gap: 16px; }}
+  header h1 {{ font-size: 22px; font-weight: 700; }}
+  header p {{ font-size: 13px; opacity: .75; }}
+  .stats {{ display: flex; gap: 16px; padding: 20px 30px; }}
+  .stat {{ background: white; border-radius: 10px; padding: 16px 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }}
+  .stat .num {{ font-size: 28px; font-weight: 700; color: #1a3a5c; }}
+  .stat .lbl {{ font-size: 12px; color: #888; margin-top: 2px; }}
+  .wrap {{ padding: 0 30px 30px; overflow-x: auto; }}
+  table {{ width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.08); font-size: 13px; }}
+  th {{ background: #1a3a5c; color: white; padding: 12px 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; }}
+  td {{ padding: 10px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }}
+  tr:last-child td {{ border-bottom: none; }}
+  tr:hover td {{ background: #f7f9fc; }}
+  .empty {{ text-align: center; padding: 60px; color: #aaa; font-size: 15px; }}
+  @media (max-width: 768px) {{ .stats {{ flex-wrap: wrap; }} header h1 {{ font-size: 18px; }} }}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⚡ Partes de Trabajo — Instapalma</h1>
+    <p>Panel de control · Actualización en tiempo real</p>
+  </div>
+</header>
+<div class="stats">
+  <div class="stat"><div class="num">{total}</div><div class="lbl">Partes totales</div></div>
+  <div class="stat"><div class="num">{sum(1 for r in rows if r[9] and ('í' in r[9].lower() or 'si' in r[9].lower()))}</div><div class="lbl">Terminados</div></div>
+  <div class="stat"><div class="num">{sum(1 for r in rows if r[9] and 'no' in r[9].lower())}</div><div class="lbl">En curso</div></div>
+</div>
+<div class="wrap">
+{"<p class='empty'>No hay partes registrados aún.</p>" if not rows else f"""
+  <table>
+    <thead><tr>
+      <th>Nº Parte</th><th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th>
+      <th>Operarios</th><th>Albaranes</th><th>Material Stock</th><th>Descripción</th><th>Estado</th>
+    </tr></thead>
+    <tbody>{filas}</tbody>
+  </table>"""}
+</div>
+</body>
+</html>"""
+    return html, 200, {{'Content-Type': 'text/html; charset=utf-8'}}
 
 @app.route('/health', methods=['GET'])
 def health():
