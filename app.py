@@ -731,6 +731,22 @@ def descargar_pdf(parte_id):
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
+@app.route('/migrate', methods=['GET'])
+def migrate():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        for col, tipo in [('material_stock','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT')]:
+            try:
+                cur.execute(f"ALTER TABLE partes ADD COLUMN IF NOT EXISTS {col} {tipo}")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        cur.close(); conn.close()
+        return {'status': 'migración OK'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/health', methods=['GET'])
 def health():
     return {'status': 'ok', 'service': 'partes-instapalma'}, 200
