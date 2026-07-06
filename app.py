@@ -223,42 +223,30 @@ def generar_pdf(datos):
     return buffer.read()
 
 def enviar_email_gmail(datos, numero_operario):
-    """Envía el parte por email via Gmail SMTP con PDF adjunto."""
-    if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        print("Gmail no configurado")
+    """Notifica al servidor Zapia para que envíe el email con PDF via Google API."""
+    zapia_url = os.environ.get('ZAPIA_NOTIFY_URL', '')
+    zapia_token = os.environ.get('ZAPIA_NOTIFY_TOKEN', '')
+    if not zapia_url or not zapia_token:
+        print("ZAPIA_NOTIFY no configurado")
         return False
     try:
-        pdf_bytes = generar_pdf(datos)
-        nombre_pdf = f"parte_{datos['numero_parte']}_{datos['obra'].replace(' ','_')}.pdf"
-
-        msg = MIMEMultipart()
-        msg['From'] = GMAIL_USER
-        msg['To'] = f"{SUPERVISOR_EMAIL_1}, {SUPERVISOR_EMAIL_2}"
-        msg['Subject'] = f"Parte de trabajo — {datos['obra']} — {datos['fecha']}"
-
-        cuerpo = (
-            f"Parte de trabajo generado desde WhatsApp.\n\n"
-            f"Fecha: {datos['fecha']}\n"
-            f"Cliente: {datos['cliente']}\n"
-            f"Obra: {datos['obra']}\n"
-            f"Operario: {numero_operario}\n\n"
-            f"Ver PDF adjunto."
+        import urllib.request
+        payload = json.dumps({
+            'token': zapia_token,
+            'datos': datos,
+            'operario': numero_operario
+        }).encode()
+        req = urllib.request.Request(
+            zapia_url,
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
         )
-        msg.attach(MIMEText(cuerpo, 'plain'))
-
-        adjunto = MIMEApplication(pdf_bytes, _subtype='pdf')
-        adjunto.add_header('Content-Disposition', 'attachment', filename=nombre_pdf)
-        msg.attach(adjunto)
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            server.sendmail(GMAIL_USER,
-                [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2],
-                msg.as_string())
-        print("Email enviado correctamente")
+        urllib.request.urlopen(req, timeout=10)
+        print("Notificación enviada a Zapia OK")
         return True
     except Exception as e:
-        print(f"Error enviando email: {e}")
+        print(f"Error notificando a Zapia: {e}")
         return False
 
 def enviar_whatsapp(destino, mensaje):
@@ -290,6 +278,7 @@ def finalizar_parte(numero, datos):
     albs = datos.get('albaranes', 'Ninguno')
     desc = datos.get('descripcion', '-')
 
+    # Mensaje resumen para el supervisor (WhatsApp)
     msg_supervisor = (
         f"📋 *PARTE DE TRABAJO*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -303,7 +292,21 @@ def finalizar_parte(numero, datos):
         f"━━━━━━━━━━━━━━━━━━━━"
     )
     enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
-    enviar_email_gmail(datos, numero)
+
+    # Mensaje especial para que Zapia genere el PDF y lo envíe por email
+    payload = json.dumps({
+        "tipo": "PARTE_CONFIRMADO",
+        "numero_parte": datos['numero_parte'],
+        "fecha": datos['fecha'],
+        "operario": numero,
+        "cliente": datos['cliente'],
+        "obra": datos['obra'],
+        "operarios": ops,
+        "albaranes": albs,
+        "descripcion": desc
+    }, ensure_ascii=False)
+    enviar_whatsapp(SUPERVISOR_WA, f"[ZAPIA_PDF]{payload}[/ZAPIA_PDF]")
+
     del conversaciones[numero]
 
 @app.route('/webhook', methods=['POST'])
