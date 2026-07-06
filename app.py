@@ -342,31 +342,63 @@ def generar_pdf(datos):
     buffer.seek(0)
     return buffer.read()
 
-def enviar_email_gmail(datos, numero_operario):
-    """Notifica al servidor Zapia para que envíe el email con PDF via Google API."""
-    zapia_url = os.environ.get('ZAPIA_NOTIFY_URL', '')
-    zapia_token = os.environ.get('ZAPIA_NOTIFY_TOKEN', '')
-    if not zapia_url or not zapia_token:
-        print("ZAPIA_NOTIFY no configurado")
+def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
+    """Envía el parte por email con el PDF adjunto usando SMTP + Gmail App Password."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders
+
+    user     = os.environ.get('GMAIL_USER', '')
+    password = os.environ.get('GMAIL_APP_PASSWORD', '')
+    if not user or not password:
+        print("GMAIL no configurado")
         return False
     try:
-        import urllib.request
-        payload = json.dumps({
-            'token': zapia_token,
-            'datos': datos,
-            'operario': numero_operario
-        }).encode()
-        req = urllib.request.Request(
-            zapia_url,
-            data=payload,
-            headers={'Content-Type': 'application/json'},
-            method='POST'
+        destinatarios = ['alberto@adpb.es', 'adm2@adpb.es']
+        ops   = datos.get('operarios', 'Ninguno')
+        term  = datos.get('terminado', '-')
+        trem  = datos.get('tiempo_restante', '')
+        estado = f"✅ Terminado" if 'í' in term.lower() or term.lower()=='si' else f"🔄 No terminado — {trem}"
+
+        msg = MIMEMultipart()
+        msg['From']    = user
+        msg['To']      = ', '.join(destinatarios)
+        msg['Subject'] = f"Parte {datos.get('numero_parte')} — {datos.get('cliente')} | {datos.get('obra')} | {datos.get('fecha')}"
+
+        cuerpo = (
+            f"Parte de trabajo confirmado.\n\n"
+            f"Nº Parte: {datos.get('numero_parte')}\n"
+            f"Fecha: {datos.get('fecha')}\n"
+            f"Cliente: {datos.get('cliente')}\n"
+            f"Obra: {datos.get('obra')}\n"
+            f"Operarios:\n{ops}\n"
+            f"Albaranes: {datos.get('albaranes','Ninguno')}\n"
+            f"Material stock: {datos.get('material_stock','Ninguno')}\n"
+            f"Descripción: {datos.get('descripcion','-')}\n"
+            f"Estado: {estado}\n\n"
+            f"Adjunto el PDF del parte."
         )
-        urllib.request.urlopen(req, timeout=10)
-        print("Notificación enviada a Zapia OK")
+        msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
+
+        if pdf_bytes:
+            part = MIMEBase('application', 'pdf')
+            part.set_payload(pdf_bytes)
+            encoders.encode_base64(part)
+            nombre_pdf = f"parte_{datos.get('numero_parte','X')}_{datos.get('obra','obra').replace(' ','_')}.pdf"
+            part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
+            msg.attach(part)
+
+        with smtplib.SMTP('smtp.gmail.com', 587, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(user, destinatarios, msg.as_bytes())
+        print("Email enviado OK")
         return True
     except Exception as e:
-        print(f"Error notificando a Zapia: {e}")
+        print(f"Error enviando email: {e}")
         return False
 
 def enviar_whatsapp(destino, mensaje, media_url=None):
@@ -430,6 +462,12 @@ def finalizar_parte(numero, datos):
     # Guardar en base de datos y obtener el ID para la URL del PDF
     parte_id = guardar_parte(datos, numero)
 
+    # Generar PDF en memoria para adjuntar al email
+    pdf_bytes = generar_pdf(datos)
+
+    # Enviar email con PDF adjunto directamente desde Railway
+    enviar_email_gmail(datos, numero, pdf_bytes=pdf_bytes)
+
     # Enviar PDF directamente a tu WhatsApp como archivo adjunto
     BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
     if parte_id:
@@ -445,7 +483,7 @@ def finalizar_parte(numero, datos):
                         f"✅ *Parte Nº {datos['numero_parte']} confirmado*\nAquí tienes tu copia en PDF:",
                         media_url=pdf_url)
 
-    # Mensaje especial para que Zapia envíe al grupo Instapalma y por email
+    # Notificar a Zapia para que envíe al grupo Instapalma
     payload = json.dumps({
         "tipo": "PARTE_CONFIRMADO",
         "numero_parte": datos['numero_parte'],
@@ -831,7 +869,9 @@ def health():
         'service': 'partes-instapalma',
         'zapia_notify_url': 'SET' if os.environ.get('ZAPIA_NOTIFY_URL') else 'NOT SET',
         'zapia_notify_token': 'SET' if os.environ.get('ZAPIA_NOTIFY_TOKEN') else 'NOT SET',
-        'supervisor_wa': os.environ.get('SUPERVISOR_WA', 'default')
+        'supervisor_wa': os.environ.get('SUPERVISOR_WA', 'default'),
+        'gmail_user': os.environ.get('GMAIL_USER', 'NOT SET'),
+        'gmail_password': 'SET' if os.environ.get('GMAIL_APP_PASSWORD') else 'NOT SET'
     }, 200
 
 if __name__ == '__main__':
