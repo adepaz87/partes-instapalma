@@ -789,7 +789,13 @@ def migrate():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return {'status': 'ok', 'service': 'partes-instapalma'}, 200
+    return {
+        'status': 'ok',
+        'service': 'partes-instapalma',
+        'zapia_notify_url': 'SET' if os.environ.get('ZAPIA_NOTIFY_URL') else 'NOT SET',
+        'zapia_notify_token': 'SET' if os.environ.get('ZAPIA_NOTIFY_TOKEN') else 'NOT SET',
+        'supervisor_wa': os.environ.get('SUPERVISOR_WA', 'default')
+    }, 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
