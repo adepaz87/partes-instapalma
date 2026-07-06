@@ -113,8 +113,7 @@ MENSAJES_INICIO = ['parte', 'parte de trabajo', 'nuevo parte', 'abrir parte', 'c
 _parte_counter = [0]
 
 def get_numero_parte():
-    _parte_counter[0] += 1
-    return f"{datetime.now().strftime('%Y')}-{_parte_counter[0]:04d}"
+    return None  # Número de parte eliminado
 
 def normalizar(texto):
     return texto.strip().lower()
@@ -129,7 +128,6 @@ def iniciar_parte(numero):
     conversaciones[numero] = {
         'paso': 'cliente',
         'datos': {
-            'numero_parte': get_numero_parte(),
             'operario': numero,
             'cliente': '',
             'obra': '',
@@ -177,17 +175,14 @@ def generar_pdf(datos):
     elements.append(HRFlowable(width="100%", thickness=2, color=AZUL))
     elements.append(Spacer(1, 0.4*cm))
 
-    # Cabecera
-    t_cab = Table([['Fecha', datos['fecha'], 'Nº Parte', datos['numero_parte']]],
-        colWidths=[3*cm, 7*cm, 3*cm, 4*cm])
+    # Cabecera — solo fecha
+    t_cab = Table([['Fecha', datos['fecha']]],
+        colWidths=[3*cm, 14*cm])
     t_cab.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (0,-1), GRIS),
-        ('BACKGROUND', (2,0), (2,-1), GRIS),
         ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
-        ('FONTNAME', (2,0), (2,-1), 'Helvetica-Bold'),
         ('FONTSIZE', (0,0), (-1,-1), 9),
         ('TEXTCOLOR', (0,0), (0,-1), AZUL),
-        ('TEXTCOLOR', (2,0), (2,-1), AZUL),
         ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
         ('PADDING', (0,0), (-1,-1), 6),
     ]))
@@ -446,7 +441,7 @@ def finalizar_parte(numero, datos):
     msg_supervisor = (
         f"📋 *PARTE DE TRABAJO*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📅 {datos['fecha']} — Nº {datos['numero_parte']}\n"
+        f"📅 {datos['fecha']}\n"
         f"📱 Operario: {numero}\n"
         f"🏢 Cliente: {datos['cliente']}\n"
         f"🔨 Obra: {datos['obra']}\n"
@@ -467,14 +462,14 @@ def finalizar_parte(numero, datos):
     if parte_id:
         pdf_url = f"https://{BOT_URL}/partes/{parte_id}/pdf"
         caption = (
-            f"📄 *Parte Nº {datos['numero_parte']}* — {datos['fecha']}\n"
+            f"📄 *Parte* — {datos['fecha']}\n"
             f"🏢 {datos['cliente']} | 🔨 {datos['obra']}\n"
             f"🏁 {linea_term}"
         )
         enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
         operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
         enviar_whatsapp(operario_wa,
-                        f"✅ *Parte Nº {datos['numero_parte']} confirmado*\nAquí tienes tu copia en PDF:",
+                        f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
                         media_url=pdf_url)
 
     del conversaciones[numero]
@@ -687,7 +682,6 @@ def listar_partes():
         else:
             pdf_badge = '<span style="color:#ccc;font-size:18px">—</span>'
         filas += f'<tr class="clickable" onclick="window.location=\'/partes/{r[0]}\'">' \
-                 f'<td><strong>{r[1] or ""}</strong></td>' \
                  f'<td>{r[2] or ""}</td>' \
                  f'<td style="font-size:11px;color:#666">{operario_limpio}</td>' \
                  f'<td><strong>{r[4] or ""}</strong></td>' \
@@ -704,7 +698,7 @@ def listar_partes():
     tabla = "<p class='empty'>No hay partes registrados aún.</p>" if not rows else f"""
   <table>
     <thead><tr>
-      <th>Nº Parte</th><th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th><th>Estado</th><th>PDF</th>
+      <th>Fecha</th><th>Operario</th><th>Cliente</th><th>Obra</th><th>Estado</th><th>PDF</th>
     </tr></thead>
     <tbody>{filas}</tbody>
   </table>"""
@@ -755,7 +749,7 @@ def ver_parte(parte_id):
 <a class="back" href="/partes">← Volver al listado</a>
 <div class="ficha">
   <div class="ficha-header">
-    <h2>Parte Nº {r[1]}</h2>
+    <h2>Parte — {r[2] or ''}</h2>
     <p>Fecha: {r[2] or '—'} &nbsp;·&nbsp; Registrado: {str(r[12])[:16] if r[12] else '—'}</p>
   </div>
   <div class="ficha-body">
