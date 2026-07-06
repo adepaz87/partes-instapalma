@@ -114,6 +114,7 @@ OPERARIOS = {
     '34628380158': 'Petter',
     '34689069588': 'Iker',
     '34690875940': 'Alberto',
+    '34606544007': 'Adolfo Castro',
 }
 
 def nombre_operario(numero):
@@ -227,18 +228,20 @@ def generar_pdf(datos):
 
     # Operarios
     elements.append(Paragraph("OPERARIOS Y HORAS", sec_style))
-    ops_rows = [['Nombre', 'Horas']]
+    ops_rows = [['Operario', 'Horas']]
     for linea in datos['operarios'].split('\n'):
         linea = linea.strip()
         if not linea:
             continue
-        if '—' in linea:
-            parts = linea.split('—', 1)
-        elif '-' in linea:
-            parts = linea.split('-', 1)
+        # Separadores: —, -, :, o patrón "NOMBRE Xh" al final
+        import re as _re
+        m = _re.match(r'^(.+?)\s*[—\-:]\s*(\d[\d.,]*\s*h(?:oras?|rs?)?)$', linea, _re.IGNORECASE)
+        if not m:
+            m = _re.match(r'^(.+?)\s+(\d[\d.,]*\s*h(?:oras?|rs?)?)$', linea, _re.IGNORECASE)
+        if m:
+            ops_rows.append([m.group(1).strip(), m.group(2).strip()])
         else:
-            parts = [linea, '']
-        ops_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
+            ops_rows.append([linea, ''])
     t_ops = Table(ops_rows, colWidths=[13*cm, 4*cm])
     t_ops.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), AZUL),
@@ -255,22 +258,27 @@ def generar_pdf(datos):
 
     # Albaranes
     elements.append(Paragraph("ALBARANES", sec_style))
-    if normalizar(datos.get('albaranes', '')) == 'ninguno' or not datos.get('albaranes'):
+    if normalizar(datos.get('albaranes', '')) in ['ninguno', 'no', ''] or not datos.get('albaranes'):
         alb_rows = [['Proveedor', 'Nº Albarán'], ['—', '—']]
     else:
         alb_rows = [['Proveedor', 'Nº Albarán']]
-        for linea in datos['albaranes'].split('\n'):
-            linea = linea.strip()
-            if not linea:
-                continue
+        # Admitir separador de línea o punto y coma
+        alb_lineas = []
+        for bloque in datos['albaranes'].split('\n'):
+            for sub in bloque.split(';'):
+                sub = sub.strip()
+                if sub:
+                    alb_lineas.append(sub)
+        for linea in alb_lineas:
             if '—' in linea:
                 parts = linea.split('—', 1)
-            elif '-' in linea:
-                parts = linea.split('-', 1)
+            elif ' - ' in linea:
+                parts = linea.split(' - ', 1)
             else:
-                parts = [linea, '']
+                # Sin separador: todo como referencia, proveedor vacío
+                parts = ['', linea]
             alb_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
-    t_alb = Table(alb_rows, colWidths=[10*cm, 7*cm])
+    t_alb = Table(alb_rows, colWidths=[8*cm, 9*cm])
     t_alb.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), AZUL),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -554,9 +562,10 @@ def webhook():
             set_paso(numero, 'albaranes')
             msg.body(
                 "4️⃣ *Albaranes*\n\n"
-                "Escribe los albaranes, uno por línea:\n"
+                "Escribe proveedor y número separados por —\n"
                 "_Ejemplo:_\n"
-                "DIEXFE — 3547364\n\n"
+                "DIEXFE — 3547364\n"
+                "COELCA — 9981\n\n"
                 "Si no hay, escribe: *ninguno*"
             )
 
