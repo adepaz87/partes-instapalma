@@ -46,7 +46,10 @@ def init_db():
                 obra TEXT,
                 operarios TEXT,
                 albaranes TEXT,
+                material_stock TEXT,
                 descripcion TEXT,
+                terminado TEXT,
+                tiempo_restante TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
@@ -62,8 +65,8 @@ def guardar_parte(datos, numero_operario):
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, descripcion)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             datos.get('numero_parte'),
             datos.get('fecha'),
@@ -72,7 +75,10 @@ def guardar_parte(datos, numero_operario):
             datos.get('obra'),
             datos.get('operarios'),
             datos.get('albaranes'),
+            datos.get('material_stock'),
             datos.get('descripcion'),
+            datos.get('terminado'),
+            datos.get('tiempo_restante'),
         ))
         conn.commit()
         cur.close()
@@ -127,7 +133,10 @@ def iniciar_parte(numero):
             'obra': '',
             'operarios': '',
             'albaranes': '',
+            'material_stock': '',
             'descripcion': '',
+            'terminado': '',
+            'tiempo_restante': '',
             'fecha': datetime.now().strftime('%d/%m/%Y'),
         }
     }
@@ -258,6 +267,37 @@ def generar_pdf(datos):
     elements.append(t_alb)
     elements.append(Spacer(1, 0.3*cm))
 
+    # Material de stock
+    elements.append(Paragraph("MATERIAL DE STOCK", sec_style))
+    mat = datos.get('material_stock', 'Ninguno')
+    if normalizar(mat) == 'ninguno' or not mat:
+        mat_rows = [['Material', 'Cantidad'], ['—', '—']]
+    else:
+        mat_rows = [['Material', 'Cantidad']]
+        for linea in mat.split('\n'):
+            linea = linea.strip()
+            if not linea:
+                continue
+            if '—' in linea:
+                parts = linea.split('—', 1)
+            elif '-' in linea:
+                parts = linea.split('-', 1)
+            else:
+                parts = [linea, '']
+            mat_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
+    t_mat = Table(mat_rows, colWidths=[10*cm, 7*cm])
+    t_mat.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), AZUL),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('PADDING', (0,0), (-1,-1), 6),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, GRIS]),
+    ]))
+    elements.append(t_mat)
+    elements.append(Spacer(1, 0.3*cm))
+
     # Descripción
     elements.append(Paragraph("DESCRIPCION DE TRABAJOS", sec_style))
     t_desc = Table([[datos.get('descripcion', '')]], colWidths=[17*cm])
@@ -270,6 +310,25 @@ def generar_pdf(datos):
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
     ]))
     elements.append(t_desc)
+    elements.append(Spacer(1, 0.3*cm))
+
+    # Estado del trabajo
+    terminado = datos.get('terminado', '')
+    tiempo_restante = datos.get('tiempo_restante', '')
+    estado_texto = 'TERMINADO ✓' if normalizar(terminado) in ['sí','si'] else f'EN CURSO — Tiempo restante: {tiempo_restante}'
+    VERDE = colors.HexColor('#2e7d32')
+    NARANJA = colors.HexColor('#e65100')
+    color_estado = VERDE if normalizar(terminado) in ['sí','si'] else NARANJA
+    t_estado = Table([[f'ESTADO: {estado_texto}']], colWidths=[17*cm])
+    t_estado.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), color_estado),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 11),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('PADDING', (0,0), (-1,-1), 8),
+    ]))
+    elements.append(t_estado)
 
     elements.append(Spacer(1, 1*cm))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
@@ -316,9 +375,13 @@ def enviar_whatsapp(destino, mensaje):
         print(f"Error WA: {e}")
 
 def generar_resumen(datos):
-    ops = datos.get('operarios', 'Ninguno')
+    ops  = datos.get('operarios', 'Ninguno')
     albs = datos.get('albaranes', 'Ninguno')
+    mat  = datos.get('material_stock', 'Ninguno')
     desc = datos.get('descripcion', '-')
+    term = datos.get('terminado', '-')
+    trem = datos.get('tiempo_restante', '')
+    linea_term = f"✅ Sí" if normalizar(term) in ['si','sí'] else f"🔄 No — {trem}" if trem else f"🔄 No"
     return (
         f"📋 *RESUMEN DEL PARTE*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -327,17 +390,22 @@ def generar_resumen(datos):
         f"🔨 Obra: {datos['obra']}\n"
         f"👷 Operarios:\n{ops}\n"
         f"📦 Albaranes: {albs}\n"
+        f"🏗️ Material stock: {mat}\n"
         f"📝 Descripción: {desc}\n"
+        f"🏁 Terminado: {linea_term}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"¿Es correcto? Responde *SÍ* para enviar o *NO* para cancelar."
     )
 
 def finalizar_parte(numero, datos):
-    ops = datos.get('operarios', 'Ninguno')
+    ops  = datos.get('operarios', 'Ninguno')
     albs = datos.get('albaranes', 'Ninguno')
+    mat  = datos.get('material_stock', 'Ninguno')
     desc = datos.get('descripcion', '-')
+    term = datos.get('terminado', '-')
+    trem = datos.get('tiempo_restante', '')
+    linea_term = f"Sí" if normalizar(term) in ['si','sí'] else f"No — {trem}" if trem else "No"
 
-    # Mensaje resumen para el supervisor (WhatsApp)
     msg_supervisor = (
         f"📋 *PARTE DE TRABAJO*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -347,7 +415,9 @@ def finalizar_parte(numero, datos):
         f"🔨 Obra: {datos['obra']}\n"
         f"👷 Operarios:\n{ops}\n"
         f"📦 Albaranes: {albs}\n"
+        f"🏗️ Material stock: {mat}\n"
         f"📝 {desc}\n"
+        f"🏁 Terminado: {linea_term}\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
     enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
@@ -365,7 +435,9 @@ def finalizar_parte(numero, datos):
         "obra": datos['obra'],
         "operarios": ops,
         "albaranes": albs,
-        "descripcion": desc
+        "material_stock": mat,
+        "descripcion": desc,
+        "terminado": linea_term,
     }, ensure_ascii=False)
     enviar_whatsapp(SUPERVISOR_WA, f"[ZAPIA_PDF]{payload}[/ZAPIA_PDF]")
 
@@ -425,11 +497,42 @@ def webhook():
     elif paso == 'albaranes':
         val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
         set_dato(numero, 'albaranes', val)
+        set_paso(numero, 'material_stock')
+        msg.body(
+            "5️⃣ *Material de stock* utilizado\n\n"
+            "Escribe el material, uno por línea:\n"
+            "_Ejemplo:_\n"
+            "Cable 2.5mm² — 20m\n"
+            "Caja superficie — 2ud\n\n"
+            "Si no hay, escribe: *ninguno*"
+        )
+
+    elif paso == 'material_stock':
+        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
+        set_dato(numero, 'material_stock', val)
         set_paso(numero, 'descripcion')
-        msg.body("5️⃣ *Descripción* de los trabajos realizados:")
+        msg.body("6️⃣ *Descripción* de los trabajos realizados:")
 
     elif paso == 'descripcion':
         set_dato(numero, 'descripcion', incoming_msg)
+        set_paso(numero, 'terminado')
+        msg.body("7️⃣ ¿El trabajo está *terminado*?\n\nResponde *SÍ* o *NO*")
+
+    elif paso == 'terminado':
+        if normalizar(incoming_msg) in ['si', 'sí', 's', 'yes']:
+            set_dato(numero, 'terminado', 'Sí')
+            set_dato(numero, 'tiempo_restante', '')
+            set_paso(numero, 'confirmar')
+            msg.body(generar_resumen(conversaciones[numero]['datos']))
+        elif normalizar(incoming_msg) in ['no', 'n']:
+            set_dato(numero, 'terminado', 'No')
+            set_paso(numero, 'tiempo_restante')
+            msg.body("8️⃣ ¿Cuánto tiempo queda para terminarlo?\n\n_Ejemplo: 2 días, media jornada, 3 horas..._")
+        else:
+            msg.body("Responde *SÍ* si está terminado o *NO* si falta trabajo.")
+
+    elif paso == 'tiempo_restante':
+        set_dato(numero, 'tiempo_restante', incoming_msg)
         set_paso(numero, 'confirmar')
         msg.body(generar_resumen(conversaciones[numero]['datos']))
 
