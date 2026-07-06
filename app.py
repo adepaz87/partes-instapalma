@@ -12,6 +12,7 @@ import os
 import smtplib
 import base64
 import io
+import psycopg2
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -26,6 +27,64 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
 app = Flask(__name__)
+
+# ── Base de datos ──────────────────────────────────────────────────────────────
+def get_db():
+    return psycopg2.connect(os.environ.get('DATABASE_URL', ''))
+
+def init_db():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS partes (
+                id SERIAL PRIMARY KEY,
+                numero_parte VARCHAR(20),
+                fecha VARCHAR(20),
+                operario VARCHAR(100),
+                cliente TEXT,
+                obra TEXT,
+                operarios TEXT,
+                albaranes TEXT,
+                descripcion TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("DB inicializada OK")
+    except Exception as e:
+        print(f"Error init DB: {e}")
+
+def guardar_parte(datos, numero_operario):
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, descripcion)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            datos.get('numero_parte'),
+            datos.get('fecha'),
+            numero_operario,
+            datos.get('cliente'),
+            datos.get('obra'),
+            datos.get('operarios'),
+            datos.get('albaranes'),
+            datos.get('descripcion'),
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("Parte guardado en DB OK")
+        return True
+    except Exception as e:
+        print(f"Error guardando parte: {e}")
+        return False
+
+with app.app_context():
+    init_db()
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
@@ -293,6 +352,9 @@ def finalizar_parte(numero, datos):
     )
     enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
 
+    # Guardar en base de datos
+    guardar_parte(datos, numero)
+
     # Mensaje especial para que Zapia genere el PDF y lo envíe por email
     payload = json.dumps({
         "tipo": "PARTE_CONFIRMADO",
@@ -385,6 +447,27 @@ def webhook():
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
 
     return str(resp)
+
+@app.route('/partes', methods=['GET'])
+def listar_partes():
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT numero_parte, fecha, operario, cliente, obra, operarios, albaranes, descripcion, created_at FROM partes ORDER BY created_at DESC LIMIT 50")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        partes = []
+        for r in rows:
+            partes.append({
+                'numero_parte': r[0], 'fecha': r[1], 'operario': r[2],
+                'cliente': r[3], 'obra': r[4], 'operarios': r[5],
+                'albaranes': r[6], 'descripcion': r[7],
+                'created_at': str(r[8])
+            })
+        return {'partes': partes, 'total': len(partes)}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
 
 @app.route('/health', methods=['GET'])
 def health():
