@@ -577,20 +577,29 @@ def webhook():
         )
 
     elif paso == 'operarios':
-        # Validar que cada línea tenga horas (número seguido de h, hrs, horas, etc.)
         import re
         lineas = [l.strip() for l in incoming_msg.strip().split('\n') if l.strip()]
-        sin_horas = []
+        errores = []
         for linea in lineas:
-            if not re.search(r'\d+\s*h', linea, re.IGNORECASE):
-                sin_horas.append(linea)
-        if sin_horas:
-            lista = '\n'.join(f'• {l}' for l in sin_horas)
+            # Debe tener texto (nombre) Y número de horas
+            tiene_nombre = bool(re.search(r'[a-záéíóúüñA-ZÁÉÍÓÚÜÑ]', linea))
+            tiene_horas  = bool(re.search(r'\d+[\.,]?\d*\s*h(?:oras?|rs?)?', linea, re.IGNORECASE))
+            if not tiene_nombre or not tiene_horas:
+                errores.append(linea)
+        if not lineas:
             msg.body(
-                f"⚠️ Faltan las *horas* en:\n{lista}\n\n"
-                "Escríbelo así:\n"
-                "_NOMBRE — 8h_\n\n"
-                "Vuelve a escribir todos los operarios con sus horas:"
+                "⚠️ No has escrito ningún operario.\n\n"
+                "Escribe uno por línea:\n"
+                "_NOMBRE — 8h_"
+            )
+        elif errores:
+            lista = '\n'.join(f'• {l}' for l in errores)
+            msg.body(
+                f"⚠️ Formato incorrecto en:\n{lista}\n\n"
+                "Cada línea debe tener *nombre* y *horas*:\n"
+                "_JUAN GARCÍA — 8h_\n"
+                "_ANTONIO — 6.5h_\n\n"
+                "Escribe de nuevo la lista completa:"
             )
         else:
             set_dato(numero, 'operarios', incoming_msg)
