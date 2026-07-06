@@ -440,6 +440,10 @@ def finalizar_parte(numero, datos):
             f"🏁 {linea_term}"
         )
         enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        # Enviar copia del PDF también al operario
+        enviar_whatsapp(f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero,
+                        f"✅ *Parte Nº {datos['numero_parte']} confirmado*\nAquí tienes tu copia en PDF:",
+                        media_url=pdf_url)
 
     # Mensaje especial para que Zapia envíe al grupo Instapalma y por email
     payload = json.dumps({
