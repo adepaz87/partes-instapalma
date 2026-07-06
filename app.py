@@ -53,6 +53,14 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS conversaciones_db (
+                numero VARCHAR(50) PRIMARY KEY,
+                paso VARCHAR(50),
+                datos JSONB,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
@@ -124,53 +132,80 @@ def nombre_operario(numero):
     corto  = limpio[2:] if limpio.startswith('34') else limpio
     return f"{nombre} ({corto})" if nombre else corto
 
-# Estado de conversaciones en memoria
-conversaciones = {}
+# ── Estado de conversaciones (persistido en DB) ────────────────────────────────
+def get_estado(numero):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT paso, datos FROM conversaciones_db WHERE numero=%s", (numero,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if row:
+            return {'paso': row[0], 'datos': row[1]}
+        return None
+    except:
+        return None
+
+def set_paso(numero, paso):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO conversaciones_db (numero, paso, datos, updated_at)
+            VALUES (%s, %s, '{}'::jsonb, NOW())
+            ON CONFLICT (numero) DO UPDATE SET paso=%s, updated_at=NOW()
+        """, (numero, paso, paso))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error set_paso: {e}")
+
+def set_dato(numero, clave, valor):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            UPDATE conversaciones_db
+            SET datos = datos || jsonb_build_object(%s, %s::text), updated_at=NOW()
+            WHERE numero=%s
+        """, (clave, valor, numero))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error set_dato: {e}")
+
+def borrar_estado(numero):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM conversaciones_db WHERE numero=%s", (numero,))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error borrar_estado: {e}")
+
+def iniciar_parte(numero):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        datos = json.dumps({
+            'operario': numero,
+            'cliente': '', 'obra': '', 'operarios': '',
+            'albaranes': '', 'material_stock': '', 'descripcion': '',
+            'terminado': '', 'tiempo_restante': '',
+            'fecha': datetime.now().strftime('%d/%m/%Y')
+        })
+        cur.execute("""
+            INSERT INTO conversaciones_db (numero, paso, datos, updated_at)
+            VALUES (%s, 'cliente', %s::jsonb, NOW())
+            ON CONFLICT (numero) DO UPDATE SET paso='cliente', datos=%s::jsonb, updated_at=NOW()
+        """, (numero, datos, datos))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error iniciar_parte: {e}")
+
 
 MENSAJES_INICIO = ['parte', 'parte de trabajo', 'nuevo parte', 'abrir parte', 'crear parte', 'hola']
 
-# Contador de partes (simple, en memoria)
-_parte_counter = [0]
-
-def get_numero_parte():
-    return None  # Número de parte eliminado
-
 def normalizar(texto):
     return texto.strip().lower()
-
 def es_confirmacion(texto):
     return normalizar(texto) in ['si', 'sí', 'ok', 'vale', 'correcto', 'confirmado', 's', 'yes']
-
 def es_cancelacion(texto):
     return normalizar(texto) in ['no', 'cancelar', 'cancel']
 
-def iniciar_parte(numero):
-    conversaciones[numero] = {
-        'paso': 'cliente',
-        'datos': {
-            'operario': numero,
-            'cliente': '',
-            'obra': '',
-            'operarios': '',
-            'albaranes': '',
-            'material_stock': '',
-            'descripcion': '',
-            'terminado': '',
-            'tiempo_restante': '',
-            'fecha': datetime.now().strftime('%d/%m/%Y'),
-        }
-    }
-
-def get_estado(numero):
-    return conversaciones.get(numero)
-
-def set_paso(numero, paso):
-    if numero in conversaciones:
-        conversaciones[numero]['paso'] = paso
-
-def set_dato(numero, clave, valor):
-    if numero in conversaciones:
-        conversaciones[numero]['datos'][clave] = valor
 
 def generar_pdf(datos):
     """Genera el PDF del parte y devuelve los bytes."""
@@ -499,7 +534,7 @@ def finalizar_parte(numero, datos):
                         f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
                         media_url=pdf_url)
 
-    del conversaciones[numero]
+    borrar_estado(numero)
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -598,7 +633,7 @@ def webhook():
             set_dato(numero, 'terminado', 'Sí')
             set_dato(numero, 'tiempo_restante', '')
             set_paso(numero, 'confirmar')
-            msg.body(generar_resumen(conversaciones[numero]['datos']))
+            msg.body(generar_resumen(get_estado(numero)['datos']))
         elif normalizar(incoming_msg) in ['no', 'n']:
             set_dato(numero, 'terminado', 'No')
             set_paso(numero, 'tiempo_restante')
@@ -609,7 +644,7 @@ def webhook():
     elif paso == 'tiempo_restante':
         set_dato(numero, 'tiempo_restante', incoming_msg)
         set_paso(numero, 'confirmar')
-        msg.body(generar_resumen(conversaciones[numero]['datos']))
+        msg.body(generar_resumen(get_estado(numero)['datos']))
 
     elif paso == 'confirmar':
         if es_confirmacion(incoming_msg):
@@ -619,7 +654,7 @@ def webhook():
                 "Se ha notificado al supervisor por WhatsApp y email con PDF. ¡Gracias!"
             )
         elif es_cancelacion(incoming_msg):
-            del conversaciones[numero]
+            borrar_estado(numero)
             msg.body("❌ Parte cancelado. Escribe *parte* para crear uno nuevo.")
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
