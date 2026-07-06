@@ -104,6 +104,25 @@ SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
 GMAIL_USER         = os.environ.get('GMAIL_USER', '')
 GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
 
+# Directorio de operarios: número → nombre
+OPERARIOS = {
+    '34636606175': 'Carlos Jonathan',
+    '34616233640': 'Toño Guardia',
+    '34666123020': 'Antonio',
+    '34689448068': 'Airam',
+    '34616908968': 'Moisés',
+    '34628380158': 'Petter',
+    '34689069588': 'Iker',
+    '34690875940': 'Alberto',
+}
+
+def nombre_operario(numero):
+    """Devuelve 'Nombre (6XXXXXXXX)' a partir de un número WhatsApp."""
+    limpio = numero.replace('whatsapp:','').replace('+','').strip()
+    nombre = OPERARIOS.get(limpio, '')
+    corto  = limpio[2:] if limpio.startswith('34') else limpio
+    return f"{nombre} ({corto})" if nombre else corto
+
 # Estado de conversaciones en memoria
 conversaciones = {}
 
@@ -442,7 +461,7 @@ def finalizar_parte(numero, datos):
         f"📋 *PARTE DE TRABAJO*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 {datos['fecha']}\n"
-        f"📱 Operario: {numero}\n"
+        f"📱 Operario: {nombre_operario(numero)}\n"
         f"🏢 Cliente: {datos['cliente']}\n"
         f"🔨 Obra: {datos['obra']}\n"
         f"👷 Operarios:\n{ops}\n"
@@ -674,7 +693,7 @@ def listar_partes():
         terminado = r[6] or ''
         es_ok = 'í' in terminado.lower() or terminado.lower() == 'si'
         badge = '<span class="badge-ok">✓ Terminado</span>' if es_ok else f'<span class="badge-curso">🔄 {r[7] or "En curso"}</span>'
-        operario_limpio = (r[3] or '').replace('whatsapp:','').replace('+34','')
+        operario_limpio = nombre_operario(r[3] or '')
         descargado = r[9]
         desc_at = str(r[10])[:16].replace('T',' ') if r[10] else ''
         if descargado:
@@ -734,7 +753,7 @@ def ver_parte(parte_id):
     es_ok = 'í' in terminado.lower() or terminado.lower() == 'si'
     estado_html = f'<div class="estado-ok">✅ TRABAJO TERMINADO</div>' if es_ok \
         else f'<div class="estado-curso">🔄 EN CURSO — Tiempo restante: {r[11] or "no especificado"}</div>'
-    operario_limpio = (r[3] or '').replace('whatsapp:','')
+    operario_limpio = nombre_operario(r[3] or '')
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -756,7 +775,7 @@ def ver_parte(parte_id):
     <div class="grid2">
       <div class="campo"><label>Cliente</label><div class="val">{r[4] or '—'}</div></div>
       <div class="campo"><label>Obra</label><div class="val">{r[5] or '—'}</div></div>
-      <div class="campo"><label>Operario (WhatsApp)</label><div class="val">{operario_limpio}</div></div>
+      <div class="campo"><label>Operario</label><div class="val">{operario_limpio}</div></div>
     </div>
     <div class="campo"><label>Operarios y horas</label><div class="val">{r[6] or '—'}</div></div>
     <div class="campo"><label>Albaranes</label><div class="val">{r[7] or '—'}</div></div>
