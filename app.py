@@ -887,6 +887,16 @@ def admin_insert():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/truncate-partes', methods=['POST'])
+def admin_truncate():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE partes RESTART IDENTITY")
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'msg': 'Tabla partes vaciada'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/migrate', methods=['GET'])
 def migrate():
     try:
