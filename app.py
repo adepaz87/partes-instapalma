@@ -105,7 +105,7 @@ with app.app_context():
 # ── Configuración ─────────────────────────────────────────────────────────────
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN  = os.environ.get('TWILIO_AUTH_TOKEN', '')
-TWILIO_WA_NUMBER   = os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+14155238886')
+TWILIO_WA_NUMBER   = os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+15554087094')
 SUPERVISOR_EMAIL_1 = 'alberto@adpb.es'
 SUPERVISOR_EMAIL_2 = 'adm2@adpb.es'
 SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
