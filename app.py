@@ -22,7 +22,7 @@ from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image as RLImage
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
@@ -225,10 +225,27 @@ def generar_pdf(datos):
         backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=0, spaceBefore=6, borderPad=4)
     pie_style = ParagraphStyle('pie', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
 
-    elements.append(Paragraph("INSTAPALMA", titulo_style))
-    elements.append(Paragraph("Parte de Trabajo", sub_style))
-    elements.append(HRFlowable(width="100%", thickness=2, color=AZUL))
-    elements.append(Spacer(1, 0.4*cm))
+    # Cabecera con logo
+    import os as _os
+    LOGO_PATH = _os.path.join(_os.path.dirname(__file__), 'logo.jpg')
+    if _os.path.exists(LOGO_PATH):
+        _logo_ratio = 1024 / 219
+        _logo_w = 4 * cm
+        _logo_h = _logo_w / _logo_ratio
+        logo_img = RLImage(LOGO_PATH, width=_logo_w, height=_logo_h)
+    else:
+        logo_img = Paragraph("INSTAPALMA", titulo_style)
+    cab_title = ParagraphStyle('cab_title', fontName='Helvetica-Bold', fontSize=16,
+        textColor=AZUL, alignment=1, leading=20)
+    cab = Table([[logo_img, Paragraph('PARTE DE TRABAJO', cab_title)]], colWidths=[5*cm, 12*cm])
+    cab.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    elements.append(cab)
+    elements.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=6))
+    elements.append(Spacer(1, 0.2*cm))
 
     # Cabecera — solo fecha
     t_cab = Table([['Fecha', datos['fecha']]],
