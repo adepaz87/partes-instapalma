@@ -606,25 +606,59 @@ def webhook():
             set_paso(numero, 'albaranes')
             msg.body(
                 "4️⃣ *Albaranes*\n\n"
-                "Escribe proveedor y número separados por —\n"
+                "Escribe cada albarán en una línea así:\n"
+                "*PROVEEDOR — Nº ALBARÁN*\n"
                 "_Ejemplo:_\n"
-                "DIEXFE — 3547364\n"
+                "DIEXFE — VCTF-012604-2026\n"
                 "COELCA — 9981\n\n"
+                "⚠️ Usa la raya larga — para separar\n"
                 "Si no hay, escribe: *ninguno*"
             )
 
     elif paso == 'albaranes':
-        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
-        set_dato(numero, 'albaranes', val)
-        set_paso(numero, 'material_stock')
-        msg.body(
-            "5️⃣ *Material de stock* utilizado\n\n"
-            "Escribe el material, uno por línea:\n"
-            "_Ejemplo:_\n"
-            "Cable 2.5mm² — 20m\n"
-            "Caja superficie — 2ud\n\n"
-            "Si no hay, escribe: *ninguno*"
-        )
+        import re as _re
+        if normalizar(incoming_msg) in ['ninguno', 'no', 'n']:
+            set_dato(numero, 'albaranes', 'Ninguno')
+            set_paso(numero, 'material_stock')
+            msg.body(
+                "5️⃣ *Material de stock* utilizado\n\n"
+                "Escribe el material, uno por línea:\n"
+                "_Ejemplo:_\n"
+                "Cable 2.5mm² — 20m\n"
+                "Caja superficie — 2ud\n\n"
+                "Si no hay, escribe: *ninguno*"
+            )
+        else:
+            # Validar que cada línea tenga PROVEEDOR — NÚMERO separados por —
+            lineas_alb = [l.strip() for l in incoming_msg.strip().split('\n') if l.strip()]
+            errores_alb = []
+            for linea in lineas_alb:
+                if '—' not in linea:
+                    errores_alb.append(linea)
+                else:
+                    partes = linea.split('—', 1)
+                    if not partes[0].strip() or not partes[1].strip():
+                        errores_alb.append(linea)
+            if errores_alb:
+                lista = '\n'.join(f'• {l}' for l in errores_alb)
+                msg.body(
+                    f"⚠️ Formato incorrecto en:\n{lista}\n\n"
+                    "Cada albarán debe tener *proveedor* y *número* separados por —\n"
+                    "_DIEXFE — VCTF-012604-2026_\n"
+                    "_COELCA — 9981_\n\n"
+                    "Escribe de nuevo la lista completa:"
+                )
+            else:
+                set_dato(numero, 'albaranes', incoming_msg)
+                set_paso(numero, 'material_stock')
+                msg.body(
+                    "5️⃣ *Material de stock* utilizado\n\n"
+                    "Escribe el material, uno por línea:\n"
+                    "_Ejemplo:_\n"
+                    "Cable 2.5mm² — 20m\n"
+                    "Caja superficie — 2ud\n\n"
+                    "Si no hay, escribe: *ninguno*"
+                )
 
     elif paso == 'material_stock':
         val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
