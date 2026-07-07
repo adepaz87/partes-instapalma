@@ -550,6 +550,12 @@ def webhook():
     msg = resp.message()
     estado = get_estado(numero)
 
+    # Comando reset en cualquier momento
+    if normalizar(incoming_msg) in ['reset', 'reiniciar', 'restart']:
+        borrar_estado(numero)
+        msg.body("🔄 Conversación reiniciada. Escribe *parte* para comenzar de nuevo.")
+        return str(resp)
+
     if not estado:
         if any(p in normalizar(incoming_msg) for p in MENSAJES_INICIO):
             iniciar_parte(numero)
