@@ -544,7 +544,6 @@ def finalizar_parte(numero, datos):
         f"━━━━━━━━━━━━━━━━━━━━"
     )
     enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
-    enviar_whatsapp(SUPERVISOR_WA_2, msg_supervisor)
 
     # Guardar en base de datos y obtener el ID para la URL del PDF
     parte_id = guardar_parte(datos, numero)
@@ -559,7 +558,6 @@ def finalizar_parte(numero, datos):
             f"🏁 {linea_term}"
         )
         enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
-        enviar_whatsapp(SUPERVISOR_WA_2, caption, media_url=pdf_url)
         operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
         enviar_whatsapp(operario_wa,
                         f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
@@ -818,7 +816,6 @@ def finalizar_vehiculo(numero, datos):
         pdf_url = f"https://{BOT_URL}/vehiculos/{vid}/pdf"
         caption = f"Parte Vehiculo - {mat} - {mes}\nKm: {datos.get('km_inicio','')} a {datos.get('km_fin','')}"
         enviar_whatsapp(SUPERVISOR_WA,   caption, media_url=pdf_url)
-        enviar_whatsapp(SUPERVISOR_WA_2, caption, media_url=pdf_url)
         op_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
         enviar_whatsapp(op_wa, "Parte de vehiculo enviado. Aqui tienes tu copia:", media_url=pdf_url)
 
