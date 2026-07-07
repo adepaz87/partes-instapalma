@@ -64,6 +64,27 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vehiculos (
+                id SERIAL PRIMARY KEY,
+                matricula VARCHAR(20),
+                marca_modelo VARCHAR(100),
+                mes VARCHAR(20),
+                km_inicio VARCHAR(20),
+                km_fin VARCHAR(20),
+                proximo_aceite VARCHAR(20),
+                estado_neumaticos TEXT,
+                conductores TEXT,
+                mantenimientos TEXT,
+                observaciones TEXT,
+                golpes TEXT,
+                operario VARCHAR(100),
+                created_at TIMESTAMP DEFAULT NOW(),
+                pdf_descargado BOOLEAN DEFAULT FALSE,
+                pdf_descargado_at TIMESTAMP
+            )
+        """)
+        conn.commit()
         print("DB inicializada OK")
     except Exception as e:
         print(f"Error init DB: {e}")
@@ -546,6 +567,264 @@ def finalizar_parte(numero, datos):
 
     borrar_estado(numero)
 
+
+MENSAJES_VEHICULO = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+
+INIT_VEHICULOS_SQL = """
+    CREATE TABLE IF NOT EXISTS vehiculos (
+        id SERIAL PRIMARY KEY,
+        matricula VARCHAR(20),
+        marca_modelo VARCHAR(100),
+        mes VARCHAR(20),
+        km_inicio VARCHAR(20),
+        km_fin VARCHAR(20),
+        proximo_aceite VARCHAR(20),
+        estado_neumaticos TEXT,
+        conductores TEXT,
+        mantenimientos TEXT,
+        observaciones TEXT,
+        golpes TEXT,
+        operario VARCHAR(100),
+        created_at TIMESTAMP DEFAULT NOW(),
+        pdf_descargado BOOLEAN DEFAULT FALSE,
+        pdf_descargado_at TIMESTAMP
+    )
+"""
+
+def iniciar_vehiculo(numero):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        datos = json.dumps({
+            'tipo': 'vehiculo',
+            'operario': numero,
+            'matricula': '', 'marca_modelo': '', 'mes': '',
+            'km_inicio': '', 'km_fin': '', 'proximo_aceite': '',
+            'estado_neumaticos': '', 'conductores': '',
+            'mantenimientos': '', 'observaciones': '', 'golpes': '',
+            'fecha': datetime.now().strftime('%d/%m/%Y')
+        })
+        cur.execute("""
+            INSERT INTO conversaciones_db (numero, paso, datos, updated_at)
+            VALUES (%s, 'v_matricula', %s::jsonb, NOW())
+            ON CONFLICT (numero) DO UPDATE SET paso='v_matricula', datos=%s::jsonb, updated_at=NOW()
+        """, (numero, datos, datos))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error iniciar_vehiculo: {e}")
+
+def guardar_vehiculo(datos, numero_operario):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO vehiculos (matricula, marca_modelo, mes, km_inicio, km_fin,
+                proximo_aceite, estado_neumaticos, conductores, mantenimientos,
+                observaciones, golpes, operario)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            RETURNING id
+        """, (
+            datos.get('matricula',''), datos.get('marca_modelo',''),
+            datos.get('mes',''), datos.get('km_inicio',''), datos.get('km_fin',''),
+            datos.get('proximo_aceite',''), datos.get('estado_neumaticos',''),
+            datos.get('conductores',''), datos.get('mantenimientos',''),
+            datos.get('observaciones',''), datos.get('golpes',''),
+            numero_operario
+        ))
+        vid = cur.fetchone()[0]
+        conn.commit(); cur.close(); conn.close()
+        return vid
+    except Exception as e:
+        print(f"Error guardar_vehiculo: {e}")
+        return None
+
+def generar_pdf_vehiculo(datos):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+    AZUL  = colors.HexColor('#1a3a5c')
+    GRIS  = colors.HexColor('#f5f5f5')
+    titulo_style = ParagraphStyle('t', fontSize=16, textColor=AZUL, alignment=TA_CENTER, fontName='Helvetica-Bold')
+    sec_style    = ParagraphStyle('s', fontSize=9,  textColor=colors.white, backColor=AZUL,
+                                  fontName='Helvetica-Bold', spaceAfter=0, spaceBefore=6, borderPad=4)
+    pie_style    = ParagraphStyle('p', fontSize=7,  textColor=colors.grey, alignment=TA_CENTER)
+    import os as _os
+    LOGO_PATH = _os.path.join(_os.path.dirname(__file__), 'logo.jpg')
+    if _os.path.exists(LOGO_PATH):
+        _lw = 4*cm; _lh = _lw / (1024/219)
+        logo_img = RLImage(LOGO_PATH, width=_lw, height=_lh)
+    else:
+        logo_img = Paragraph("INSTAPALMA", titulo_style)
+    cab_t = ParagraphStyle('ct', fontName='Helvetica-Bold', fontSize=16, textColor=AZUL, alignment=1, leading=20)
+    cab = Table([[logo_img, Paragraph('PARTE DE VEHÍCULO', cab_t)]], colWidths=[5*cm, 12*cm])
+    cab.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
+    elements.append(cab)
+    elements.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=6))
+    elements.append(Spacer(1, 0.2*cm))
+
+    t_gen = Table([
+        ['Matrícula', datos.get('matricula',''), 'Mes', datos.get('mes','')],
+        ['Marca/Modelo', datos.get('marca_modelo',''), 'Fecha', datos.get('fecha','')],
+    ], colWidths=[3*cm, 6.5*cm, 2.5*cm, 5*cm])
+    t_gen.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(0,-1),AZUL),('BACKGROUND',(2,0),(2,-1),AZUL),
+        ('TEXTCOLOR',(0,0),(0,-1),colors.white),('TEXTCOLOR',(2,0),(2,-1),colors.white),
+        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),9),
+        ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),('PADDING',(0,0),(-1,-1),6),
+    ]))
+    elements.append(t_gen)
+    elements.append(Spacer(1,0.3*cm))
+
+    elements.append(Paragraph("KILÓMETROS", sec_style))
+    t_km = Table([
+        ['Km inicio mes', datos.get('km_inicio',''), 'Km fin mes', datos.get('km_fin','')],
+        ['Próximo cambio aceite (km)', datos.get('proximo_aceite',''), '', ''],
+    ], colWidths=[5*cm, 4.5*cm, 4*cm, 3.5*cm])
+    t_km.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(0,-1),GRIS),('BACKGROUND',(2,0),(2,-1),GRIS),
+        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),9),
+        ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),('PADDING',(0,0),(-1,-1),6),
+        ('SPAN',(1,1),(3,1)),
+    ]))
+    elements.append(t_km)
+    elements.append(Spacer(1,0.3*cm))
+
+    elements.append(Paragraph("ESTADO NEUMÁTICOS", sec_style))
+    t_neum = Table([[datos.get('estado_neumaticos','Ninguno')]], colWidths=[17*cm])
+    t_neum.setStyle(TableStyle([
+        ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
+        ('PADDING',(0,0),(-1,-1),6),('BACKGROUND',(0,0),(-1,-1),GRIS),
+    ]))
+    elements.append(t_neum)
+    elements.append(Spacer(1,0.3*cm))
+
+    elements.append(Paragraph("CONDUCTORES", sec_style))
+    cond_rows = [['Conductor', 'Desde', 'Hasta']]
+    for linea in (datos.get('conductores','') or '').split('\n'):
+        linea = linea.strip()
+        if not linea: continue
+        partes = [p.strip() for p in linea.replace('—','-').split('-',2)]
+        if len(partes) >= 3:
+            cond_rows.append([partes[0], partes[1], partes[2]])
+        elif len(partes) == 2:
+            cond_rows.append([partes[0], partes[1], ''])
+        else:
+            cond_rows.append([linea, '', ''])
+    t_cond = Table(cond_rows, colWidths=[8*cm, 4.5*cm, 4.5*cm])
+    t_cond.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),AZUL),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9),
+        ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),('PADDING',(0,0),(-1,-1),6),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,GRIS]),
+    ]))
+    elements.append(t_cond)
+    elements.append(Spacer(1,0.3*cm))
+
+    elements.append(Paragraph("MANTENIMIENTOS REALIZADOS", sec_style))
+    mant_rows = [['Concepto', 'Fecha', 'Km']]
+    for linea in (datos.get('mantenimientos','') or '').split('\n'):
+        linea = linea.strip()
+        if not linea: continue
+        partes = [p.strip() for p in linea.replace('—','-').split('-',2)]
+        if len(partes) >= 3:
+            mant_rows.append([partes[0], partes[1], partes[2]])
+        elif len(partes) == 2:
+            mant_rows.append([partes[0], partes[1], ''])
+        else:
+            mant_rows.append([linea, '', ''])
+    t_mant = Table(mant_rows, colWidths=[9*cm, 4*cm, 4*cm])
+    t_mant.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),AZUL),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),9),
+        ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),('PADDING',(0,0),(-1,-1),6),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,GRIS]),
+    ]))
+    elements.append(t_mant)
+    elements.append(Spacer(1,0.3*cm))
+
+    elements.append(Paragraph("OBSERVACIONES / PRÓXIMOS MANTENIMIENTOS", sec_style))
+    t_obs = Table([[datos.get('observaciones','Ninguna')]], colWidths=[17*cm])
+    t_obs.setStyle(TableStyle([
+        ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
+        ('PADDING',(0,0),(-1,-1),6),
+    ]))
+    elements.append(t_obs)
+    elements.append(Spacer(1,0.3*cm))
+
+    elements.append(Paragraph("GOLPES Y DESPERFECTOS", sec_style))
+    t_golp = Table([[datos.get('golpes','Ninguno')]], colWidths=[17*cm])
+    t_golp.setStyle(TableStyle([
+        ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
+        ('PADDING',(0,0),(-1,-1),6),('BACKGROUND',(0,0),(-1,-1),GRIS),
+    ]))
+    elements.append(t_golp)
+    elements.append(Spacer(1,0.5*cm))
+
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.lightgrey, spaceAfter=4))
+    elements.append(Paragraph("Instapalma — Parte de Vehículo generado automáticamente", pie_style))
+    doc.build(elements)
+    return buffer.getvalue()
+
+def generar_resumen_vehiculo(datos):
+    return (
+        f"📋 *Resumen — Parte de Vehículo*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚗 {datos.get('matricula','')} | {datos.get('marca_modelo','')}\n"
+        f"📅 Mes: {datos.get('mes','')}\n"
+        f"📍 Km inicio: {datos.get('km_inicio','')} | Km fin: {datos.get('km_fin','')}\n"
+        f"🔧 Próx. aceite: {datos.get('proximo_aceite','')} km\n"
+        f"🔴 Neumáticos: {datos.get('estado_neumaticos','')}\n"
+        f"👤 Conductores:\n{datos.get('conductores','')}\n"
+        f"🛠️ Mantenimientos:\n{datos.get('mantenimientos','')}\n"
+        f"📝 Observaciones: {datos.get('observaciones','')}\n"
+        f"⚠️ Golpes: {datos.get('golpes','')}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"¿Es correcto? Responde *SÍ* para enviar o *NO* para cancelar."
+    )
+
+def finalizar_vehiculo(numero, datos):
+    mat = datos.get('matricula','').replace(' ','_').upper()
+    mes = datos.get('mes','').replace('/','_').replace(' ','_')
+    nombre_pdf = f"{mes}-{mat}-VEHICULO.pdf"
+    pdf_bytes = generar_pdf_vehiculo(datos)
+
+    try:
+        msg_email = MIMEMultipart()
+        msg_email['From']    = GMAIL_USER
+        msg_email['To']      = ', '.join([SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2])
+        msg_email['Subject'] = f"Parte Vehiculo - {mat} - {mes}"
+        body_txt = (
+            f"Parte de vehiculo generado.\n\n"
+            f"Matricula: {datos.get('matricula','')}\n"
+            f"Modelo: {datos.get('marca_modelo','')}\n"
+            f"Mes: {mes}\n"
+            f"Km inicio: {datos.get('km_inicio','')} | Km fin: {datos.get('km_fin','')}\n"
+        )
+        msg_email.attach(MIMEText(body_txt, 'plain'))
+        part = MIMEApplication(pdf_bytes, Name=nombre_pdf)
+        part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
+        msg_email.attach(part)
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
+            srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            srv.sendmail(GMAIL_USER, [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2], msg_email.as_string())
+        print("Email vehiculo OK")
+    except Exception as e:
+        print(f"Error email vehiculo: {e}")
+
+    vid = guardar_vehiculo(datos, numero)
+    BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
+    if vid:
+        pdf_url = f"https://{BOT_URL}/vehiculos/{vid}/pdf"
+        caption = f"Parte Vehiculo - {mat} - {mes}\nKm: {datos.get('km_inicio','')} a {datos.get('km_fin','')}"
+        enviar_whatsapp(SUPERVISOR_WA,   caption, media_url=pdf_url)
+        enviar_whatsapp(SUPERVISOR_WA_2, caption, media_url=pdf_url)
+        op_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
+        enviar_whatsapp(op_wa, "Parte de vehiculo enviado. Aqui tienes tu copia:", media_url=pdf_url)
+
+    borrar_estado(numero)
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     incoming_msg = request.form.get('Body', '').strip()
@@ -560,6 +839,17 @@ def webhook():
         borrar_estado(numero)
         msg.body("🔄 Conversación reiniciada. Escribe *parte* para comenzar de nuevo.")
         return str(resp)
+
+    # Detectar arranque vehiculo
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_VEHICULO):
+        if not estado or estado.get('datos', {}).get('tipo') != 'vehiculo':
+            iniciar_vehiculo(numero)
+            msg.body(
+                "🚗 *Bot de Vehículos — Instapalma*\n\n"
+                "Vamos a registrar el parte mensual paso a paso.\n\n"
+                "1️⃣ ¿Cuál es la *matrícula* del vehículo?"
+            )
+            return str(resp)
 
     if not estado:
         if any(p in normalizar(incoming_msg) for p in MENSAJES_INICIO):
@@ -715,6 +1005,103 @@ def webhook():
         elif es_cancelacion(incoming_msg):
             borrar_estado(numero)
             msg.body("❌ Parte cancelado. Escribe *parte* para crear uno nuevo.")
+        else:
+            msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
+
+    # ── Flujo vehículos ────────────────────────────────────────────────────
+    elif paso == 'v_matricula':
+        set_dato(numero, 'matricula', incoming_msg.upper())
+        set_paso(numero, 'v_modelo')
+        msg.body("2️⃣ *Marca y modelo* del vehículo:\n_Ejemplo: Ford Transit 2020_")
+
+    elif paso == 'v_modelo':
+        set_dato(numero, 'marca_modelo', incoming_msg)
+        set_paso(numero, 'v_mes')
+        msg.body("3️⃣ ¿A qué *mes* corresponde este parte?\n_Ejemplo: Junio 2026_")
+
+    elif paso == 'v_mes':
+        set_dato(numero, 'mes', incoming_msg)
+        set_paso(numero, 'v_km_inicio')
+        msg.body("4️⃣ *Km al inicio del mes*:")
+
+    elif paso == 'v_km_inicio':
+        set_dato(numero, 'km_inicio', incoming_msg)
+        set_paso(numero, 'v_km_fin')
+        msg.body("5️⃣ *Km al final del mes*:")
+
+    elif paso == 'v_km_fin':
+        set_dato(numero, 'km_fin', incoming_msg)
+        set_paso(numero, 'v_aceite')
+        msg.body("6️⃣ ¿A cuántos km es el *próximo cambio de aceite*?\n_Ejemplo: 85000_")
+
+    elif paso == 'v_aceite':
+        set_dato(numero, 'proximo_aceite', incoming_msg)
+        set_paso(numero, 'v_neumaticos')
+        msg.body(
+            "7️⃣ *Estado de los neumáticos*\n\n"
+            "_Ejemplo: Delanteros OK, traseros con desgaste_\n"
+            "Si están bien, escribe: *OK*"
+        )
+
+    elif paso == 'v_neumaticos':
+        set_dato(numero, 'estado_neumaticos', incoming_msg)
+        set_paso(numero, 'v_conductores')
+        msg.body(
+            "8️⃣ *Conductores del mes*\n\n"
+            "Escribe uno por línea con fechas:\n"
+            "_NOMBRE - desde - hasta_\n"
+            "Ejemplo:\n"
+            "JUAN GARCÍA - 01/06 - 15/06\n"
+            "PEDRO MARTÍN - 16/06 - 30/06\n\n"
+            "Si solo hay uno todo el mes escribe el nombre."
+        )
+
+    elif paso == 'v_conductores':
+        set_dato(numero, 'conductores', incoming_msg)
+        set_paso(numero, 'v_mantenimientos')
+        msg.body(
+            "9️⃣ *Mantenimientos realizados*\n\n"
+            "Escribe uno por línea:\n"
+            "_CONCEPTO - FECHA - KM_\n"
+            "Ejemplo:\n"
+            "Cambio aceite - 10/06/2026 - 82000\n"
+            "Revisión frenos - 20/06/2026 - 82500\n\n"
+            "Si no hay, escribe: *ninguno*"
+        )
+
+    elif paso == 'v_mantenimientos':
+        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
+        set_dato(numero, 'mantenimientos', val)
+        set_paso(numero, 'v_observaciones')
+        msg.body(
+            "🔟 *Observaciones y próximos mantenimientos*\n\n"
+            "Escribe lo que necesites.\n"
+            "Si no hay, escribe: *ninguno*"
+        )
+
+    elif paso == 'v_observaciones':
+        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
+        set_dato(numero, 'observaciones', val)
+        set_paso(numero, 'v_golpes')
+        msg.body(
+            "1️⃣1️⃣ *Golpes y desperfectos*\n\n"
+            "Describe cualquier daño visible.\n"
+            "Si no hay, escribe: *ninguno*"
+        )
+
+    elif paso == 'v_golpes':
+        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
+        set_dato(numero, 'golpes', val)
+        set_paso(numero, 'v_confirmar')
+        msg.body(generar_resumen_vehiculo(get_estado(numero)['datos']))
+
+    elif paso == 'v_confirmar':
+        if es_confirmacion(incoming_msg):
+            finalizar_vehiculo(numero, datos)
+            msg.body("✅ *Parte de vehículo enviado.* Se ha notificado al supervisor por WhatsApp y email. ¡Gracias!")
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body("❌ Parte cancelado. Escribe *vehiculo* para crear uno nuevo.")
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
 
@@ -991,6 +1378,68 @@ def health():
         'gmail_user': os.environ.get('GMAIL_USER', 'NOT SET'),
         'gmail_password': 'SET' if os.environ.get('GMAIL_APP_PASSWORD') else 'NOT SET'
     }, 200
+
+@app.route('/vehiculos')
+def panel_vehiculos():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT id, matricula, marca_modelo, mes, km_inicio, km_fin, operario, created_at FROM vehiculos ORDER BY created_at DESC")
+        rows = cur.fetchall(); cur.close(); conn.close()
+    except Exception as e:
+        rows = []
+    filas = ""
+    for r in rows:
+        filas += f"""<tr class="clickable" onclick="window.location='/vehiculos/{r[0]}'">
+            <td>{r[0]}</td><td><b>{r[1]}</b></td><td>{r[2]}</td><td>{r[3]}</td>
+            <td>{r[4]}</td><td>{r[5]}</td><td>{nombre_operario(r[6] or '')}</td>
+            <td>{str(r[7])[:10]}</td>
+            <td><a href='/vehiculos/{r[0]}/pdf' onclick='event.stopPropagation()'>📄 PDF</a></td>
+        </tr>"""
+    html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
+    <title>Vehículos — Instapalma</title>
+    <style>{CSS_BASE}</style></head><body>
+    <header><div><h1>🚗 Partes de Vehículos</h1><p>Instapalma</p></div></header>
+    <div class='wrap'><table>
+    <thead><tr><th>#</th><th>Matrícula</th><th>Modelo</th><th>Mes</th>
+    <th>Km inicio</th><th>Km fin</th><th>Operario</th><th>Fecha</th><th>PDF</th></tr></thead>
+    <tbody>{''.join([filas]) if rows else "<tr><td colspan=9 class='empty'>Sin registros</td></tr>"}</tbody>
+    </table></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    </body></html>"""
+    from flask import Response
+    return Response(html, mimetype='text/html')
+
+@app.route('/vehiculos/<int:v_id>/pdf')
+def descargar_pdf_vehiculo(v_id):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT * FROM vehiculos WHERE id=%s", (v_id,))
+        r = cur.fetchone(); cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+    if not r:
+        return "Vehículo no encontrado", 404
+    datos = {
+        'matricula': r[1], 'marca_modelo': r[2], 'mes': r[3],
+        'km_inicio': r[4], 'km_fin': r[5], 'proximo_aceite': r[6],
+        'estado_neumaticos': r[7], 'conductores': r[8], 'mantenimientos': r[9],
+        'observaciones': r[10], 'golpes': r[11],
+        'fecha': str(r[13])[:10] if r[13] else ''
+    }
+    pdf_bytes = generar_pdf_vehiculo(datos)
+    mat = (r[1] or 'VEHICULO').replace(' ','_').upper()
+    mes = (r[3] or '').replace('/','_').replace(' ','_')
+    nombre = f"{mes}-{mat}-VEHICULO.pdf"
+    try:
+        from datetime import datetime as dt
+        conn2 = get_db(); cur2 = conn2.cursor()
+        cur2.execute("UPDATE vehiculos SET pdf_descargado=TRUE, pdf_descargado_at=%s WHERE id=%s", (dt.utcnow(), v_id))
+        conn2.commit(); cur2.close(); conn2.close()
+    except Exception:
+        pass
+    from flask import Response
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
