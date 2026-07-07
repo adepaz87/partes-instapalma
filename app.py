@@ -109,6 +109,7 @@ TWILIO_WA_NUMBER   = os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+14155238886')
 SUPERVISOR_EMAIL_1 = 'alberto@adpb.es'
 SUPERVISOR_EMAIL_2 = 'adm2@adpb.es'
 SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
+SUPERVISOR_WA_2    = 'whatsapp:+34654893491'
 GMAIL_USER         = os.environ.get('GMAIL_USER', '')
 GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
 
@@ -517,6 +518,7 @@ def finalizar_parte(numero, datos):
         f"━━━━━━━━━━━━━━━━━━━━"
     )
     enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
+    enviar_whatsapp(SUPERVISOR_WA_2, msg_supervisor)
 
     # Guardar en base de datos y obtener el ID para la URL del PDF
     parte_id = guardar_parte(datos, numero)
@@ -531,6 +533,7 @@ def finalizar_parte(numero, datos):
             f"🏁 {linea_term}"
         )
         enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        enviar_whatsapp(SUPERVISOR_WA_2, caption, media_url=pdf_url)
         operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
         enviar_whatsapp(operario_wa,
                         f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
