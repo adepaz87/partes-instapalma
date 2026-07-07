@@ -291,29 +291,14 @@ def generar_pdf(datos):
     elements.append(t_ops)
     elements.append(Spacer(1, 0.3*cm))
 
-    # Albaranes
+    # Albaranes — una sola columna
     elements.append(Paragraph("ALBARANES", sec_style))
-    if normalizar(datos.get('albaranes', '')) in ['ninguno', 'no', ''] or not datos.get('albaranes'):
-        alb_rows = [['Proveedor', 'Nº Albarán'], ['—', '—']]
+    alb_texto = datos.get('albaranes', '')
+    if normalizar(alb_texto) in ['ninguno', 'no', ''] or not alb_texto:
+        alb_contenido = '—'
     else:
-        alb_rows = [['Proveedor', 'Nº Albarán']]
-        # Admitir separador de línea o punto y coma
-        alb_lineas = []
-        for bloque in datos['albaranes'].split('\n'):
-            for sub in bloque.split(';'):
-                sub = sub.strip()
-                if sub:
-                    alb_lineas.append(sub)
-        for linea in alb_lineas:
-            if '—' in linea:
-                parts = linea.split('—', 1)
-            elif ' - ' in linea:
-                parts = linea.split(' - ', 1)
-            else:
-                # Sin separador: todo como referencia, proveedor vacío
-                parts = ['', linea]
-            alb_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
-    t_alb = Table(alb_rows, colWidths=[8*cm, 9*cm])
+        alb_contenido = alb_texto.strip()
+    t_alb = Table([['Albaranes'], [alb_contenido]], colWidths=[17*cm])
     t_alb.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), AZUL),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -321,7 +306,7 @@ def generar_pdf(datos):
         ('FONTSIZE', (0,0), (-1,-1), 9),
         ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
         ('PADDING', (0,0), (-1,-1), 6),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, GRIS]),
+        ('BACKGROUND', (0,1), (-1,-1), colors.white),
     ]))
     elements.append(t_alb)
     elements.append(Spacer(1, 0.3*cm))
