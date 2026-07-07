@@ -926,6 +926,18 @@ def admin_insert():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/reset-conversacion', methods=['POST'])
+def admin_reset_conv():
+    try:
+        datos = request.get_json()
+        numero = datos.get('numero', '')
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM conversaciones_db WHERE numero=%s", (numero,))
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'msg': f'Conversación {numero} borrada'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/truncate-partes', methods=['POST'])
 def admin_truncate():
     try:
