@@ -229,6 +229,15 @@ def es_cancelacion(texto):
     return normalizar(texto) in ['no', 'cancelar', 'cancel']
 
 
+def limpiar_nombre_archivo(texto):
+    """Elimina caracteres especiales para nombres de archivo seguros."""
+    import unicodedata
+    texto = unicodedata.normalize('NFD', texto)
+    texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
+    texto = texto.replace(' ', '_').replace('/', '-').replace('\\', '-')
+    texto = ''.join(c for c in texto if c.isalnum() or c in '_-.')
+    return texto.upper()
+
 def generar_pdf(datos):
     """Genera el PDF del parte y devuelve los bytes."""
     buffer = io.BytesIO()
@@ -470,7 +479,7 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
             fecha_pdf = datos.get('fecha', '').replace('/', '-').replace(' ', '')
             obra_pdf = datos.get('obra', 'obra').replace(' ', '_').upper()
             ops_raw = datos.get('operarios', '')
-            ops_lista = [l.split('—')[0].split('-')[0].strip().split()[0].upper() for l in ops_raw.split('\n') if l.strip()]
+            ops_lista = [limpiar_nombre_archivo(l.split('—')[0].split('-')[0].strip().split()[0]) for l in ops_raw.split('\n') if l.strip()]
             ops_pdf = '-'.join(ops_lista) if ops_lista else 'OPERARIOS'
             nombre_pdf = f"{fecha_pdf}-{obra_pdf}-{ops_pdf}.pdf"
             part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
@@ -1290,7 +1299,7 @@ def descargar_pdf(parte_id):
     fecha_pdf2 = (r[2] or '').replace('/', '-').replace(' ', '')
     obra_pdf2 = (r[5] or 'obra').replace(' ', '_').upper()
     ops_raw2 = r[6] or ''
-    ops_lista2 = [l.split('—')[0].split('-')[0].strip().split()[0].upper() for l in ops_raw2.split('\n') if l.strip()]
+    ops_lista2 = [limpiar_nombre_archivo(l.split('—')[0].split('-')[0].strip().split()[0]) for l in ops_raw2.split('\n') if l.strip()]
     ops_pdf2 = '-'.join(ops_lista2) if ops_lista2 else 'OPERARIOS'
     nombre = f"{fecha_pdf2}-{obra_pdf2}-{ops_pdf2}.pdf"
     # Marcar como descargado
