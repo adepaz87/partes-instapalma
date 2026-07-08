@@ -557,8 +557,11 @@ def finalizar_parte(numero, datos):
             f"🏢 {datos['cliente']} | 🔨 {datos['obra']}\n"
             f"🏁 {linea_term}"
         )
+        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
         operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
-        enviar_whatsapp(operario_wa, f"✅ *Parte confirmado y enviado por email.*")
+        enviar_whatsapp(operario_wa,
+                        f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
+                        media_url=pdf_url)
 
     borrar_estado(numero)
 
