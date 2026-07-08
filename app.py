@@ -477,7 +477,7 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
             part.set_payload(pdf_bytes)
             encoders.encode_base64(part)
             fecha_pdf = datos.get('fecha', '').replace('/', '-').replace(' ', '')
-            obra_pdf = datos.get('obra', 'obra').replace(' ', '_').upper()
+            obra_pdf = limpiar_nombre_archivo(datos.get('obra', 'obra'))
             ops_raw = datos.get('operarios', '')
             ops_lista = [limpiar_nombre_archivo(l.split('—')[0].split('-')[0].strip().split()[0]) for l in ops_raw.split('\n') if l.strip()]
             ops_pdf = '-'.join(ops_lista) if ops_lista else 'OPERARIOS'
@@ -561,9 +561,13 @@ def finalizar_parte(numero, datos):
     BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
     if parte_id:
         pdf_url = f"https://{BOT_URL}/partes/{parte_id}/pdf"
+        import unicodedata as _ud
+        def _clean(t):
+            t2 = _ud.normalize('NFD', str(t))
+            return ''.join(c for c in t2 if _ud.category(c) != 'Mn')
         caption = (
             f"📄 *Parte* — {datos['fecha']}\n"
-            f"🏢 {datos['cliente']} | 🔨 {datos['obra']}\n"
+            f"🏢 {_clean(datos['cliente'])} | 🔨 {_clean(datos['obra'])}\n"
             f"🏁 {linea_term}"
         )
         enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
@@ -1297,7 +1301,7 @@ def descargar_pdf(parte_id):
     }
     pdf_bytes = generar_pdf(datos)
     fecha_pdf2 = (r[2] or '').replace('/', '-').replace(' ', '')
-    obra_pdf2 = (r[5] or 'obra').replace(' ', '_').upper()
+    obra_pdf2 = limpiar_nombre_archivo(r[5] or 'obra')
     ops_raw2 = r[6] or ''
     ops_lista2 = [limpiar_nombre_archivo(l.split('—')[0].split('-')[0].strip().split()[0]) for l in ops_raw2.split('\n') if l.strip()]
     ops_pdf2 = '-'.join(ops_lista2) if ops_lista2 else 'OPERARIOS'
