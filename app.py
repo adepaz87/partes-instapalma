@@ -835,6 +835,15 @@ def finalizar_vehiculo(numero, datos):
     borrar_estado(numero)
 
 
+@app.route('/webhook', methods=['GET'])
+def webhook_verify():
+    mode = request.args.get('hub.mode')
+    token = request.args.get('hub.verify_token')
+    challenge = request.args.get('hub.challenge')
+    if mode == 'subscribe' and token == 'instapalma2024':
+        return challenge, 200
+    return 'Forbidden', 403
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     incoming_msg = request.form.get('Body', '').strip()
