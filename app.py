@@ -944,14 +944,14 @@ def webhook():
         else:
             set_dato(numero, 'albaranes', incoming_msg)
         set_paso(numero, 'material_stock')
-                msg.body(
-                    "5️⃣ *Material de stock* utilizado\n\n"
-                    "Escribe el material, uno por línea:\n"
-                    "_Ejemplo:_\n"
-                    "Cable 2.5mm² — 20m\n"
-                    "Caja superficie — 2ud\n\n"
-                    "Si no hay, escribe: *ninguno*"
-                )
+        msg.body(
+            "5️⃣ *Material de stock* utilizado\n\n"
+            "Escribe el material, uno por línea:\n"
+            "_Ejemplo:_\n"
+            "Cable 2.5mm² — 20m\n"
+            "Caja superficie — 2ud\n\n"
+            "Si no hay, escribe: *ninguno*"
+        )
 
     elif paso == 'material_stock':
         val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
