@@ -81,6 +81,17 @@ def init_db():
                 pdf_descargado_at TIMESTAMP
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vacaciones (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100),
+                fecha_inicio VARCHAR(20),
+                fecha_fin VARCHAR(20),
+                fecha_solicitud VARCHAR(20),
+                estado VARCHAR(20) DEFAULT 'pendiente',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
@@ -583,7 +594,71 @@ def finalizar_parte(numero, datos):
     borrar_estado(numero)
 
 
-MENSAJES_VEHICULO = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+MENSAJES_VEHICULO  = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
+
+def iniciar_vacaciones(numero):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        datos = json.dumps({
+            'tipo': 'vacaciones',
+            'operario': numero,
+            'fecha_inicio': '', 'fecha_fin': '',
+            'fecha_solicitud': datetime.now().strftime('%d/%m/%Y')
+        })
+        cur.execute("""
+            INSERT INTO conversaciones_db (numero, paso, datos, updated_at)
+            VALUES (%s, 'vac_inicio', %s::jsonb, NOW())
+            ON CONFLICT (numero) DO UPDATE SET paso='vac_inicio', datos=%s::jsonb, updated_at=NOW()
+        """, (numero, datos, datos))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error iniciar_vacaciones: {e}")
+
+def guardar_vacacion(datos, numero_operario):
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO vacaciones (operario, fecha_inicio, fecha_fin, fecha_solicitud, estado)
+            VALUES (%s, %s, %s, %s, 'pendiente')
+            RETURNING id
+        """, (
+            numero_operario,
+            datos.get('fecha_inicio',''),
+            datos.get('fecha_fin',''),
+            datos.get('fecha_solicitud','')
+        ))
+        vid = cur.fetchone()[0]
+        conn.commit()
+        return vid
+    except Exception as e:
+        print(f"Error guardar_vacacion: {e}")
+        if conn: conn.rollback()
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+def aprobar_rechazar_vacacion(vac_id, estado):
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE vacaciones SET estado=%s WHERE id=%s RETURNING operario, fecha_inicio, fecha_fin", (estado, vac_id))
+        row = cur.fetchone()
+        conn.commit()
+        return row  # (operario, fecha_inicio, fecha_fin)
+    except Exception as e:
+        print(f"Error aprobar_rechazar: {e}")
+        if conn: conn.rollback()
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
 
 INIT_VEHICULOS_SQL = """
     CREATE TABLE IF NOT EXISTS vehiculos (
@@ -920,6 +995,56 @@ def webhook():
         )
         return str(resp) if not use_meta else ('OK', 200)
 
+    # Detectar solicitud de vacaciones
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_VACACIONES):
+        iniciar_vacaciones(numero)
+        msg.body(
+            "🌴 *Solicitud de Vacaciones — Instapalma*\n\n"
+            "Vamos a registrar tu solicitud.\n\n"
+            "1️⃣ ¿Cuál es la *fecha de inicio*?\n_Ejemplo: 14/07/2026_"
+        )
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Gestión de aprobación por Alberto (APROBAR/RECHAZAR ID)
+    if numero in [SUPERVISOR_WA, 'whatsapp:+34690875940']:
+        msg_norm = normalizar(incoming_msg)
+        import re as _re
+        m = _re.match(r'^(aprobar|rechazar)\s+(\d+)$', msg_norm)
+        if m:
+            accion = m.group(1)
+            vac_id = int(m.group(2))
+            estado_nuevo = 'aprobada' if accion == 'aprobar' else 'rechazada'
+            row = aprobar_rechazar_vacacion(vac_id, estado_nuevo)
+            if row:
+                op_num, fi, ff = row
+                op_nombre = nombre_operario(op_num)
+                op_wa = op_num if op_num.startswith('whatsapp:') else f"whatsapp:{op_num}"
+                if estado_nuevo == 'aprobada':
+                    enviar_whatsapp(op_wa, f"✅ *Vacaciones aprobadas*\nTus vacaciones del {fi} al {ff} han sido aprobadas por Alberto. ¡Disfrútalas! 🌴")
+                    msg.body(f"✅ Vacaciones de {op_nombre} ({fi} – {ff}) aprobadas. Te lo añado al calendario.")
+                    # Notificar a Zapia para añadir al calendario
+                    zapia_url = os.environ.get('ZAPIA_NOTIFY_URL','')
+                    zapia_token = os.environ.get('ZAPIA_NOTIFY_TOKEN','')
+                    if zapia_url:
+                        import urllib.request as _ur
+                        payload = json.dumps({
+                            "token": zapia_token,
+                            "action": "calendar_event",
+                            "title": f"Vacaciones - {op_nombre} {fi} - {ff}",
+                            "start": fi,
+                            "end": ff
+                        }).encode()
+                        try:
+                            _ur.urlopen(_ur.Request(zapia_url, data=payload,
+                                headers={"Content-Type":"application/json"}), timeout=5)
+                        except: pass
+                else:
+                    enviar_whatsapp(op_wa, f"❌ *Vacaciones no aprobadas*\nTu solicitud de vacaciones del {fi} al {ff} no ha sido aprobada. Contacta con Alberto para más información.")
+                    msg.body(f"❌ Vacaciones de {op_nombre} rechazadas. El operario ha sido notificado.")
+            else:
+                msg.body(f"No encontré la solicitud #{vac_id}. Verifica el número.")
+            return str(resp) if not use_meta else ('OK', 200)
+
     if not estado:
         if any(p in normalizar(incoming_msg) for p in MENSAJES_INICIO):
             iniciar_parte(numero)
@@ -1141,6 +1266,53 @@ def webhook():
             msg.body("❌ Parte cancelado. Escribe *vehiculo* para crear uno nuevo.")
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
+
+    # ── Flujo vacaciones ──────────────────────────────────────────────────────
+    elif paso == 'vac_inicio':
+        set_dato(numero, 'fecha_inicio', incoming_msg)
+        set_paso(numero, 'vac_fin')
+        msg.body("2️⃣ ¿Cuál es la *fecha de fin*?\n_Ejemplo: 21/07/2026_")
+
+    elif paso == 'vac_fin':
+        set_dato(numero, 'fecha_fin', incoming_msg)
+        set_paso(numero, 'vac_confirmar')
+        datos_vac = get_estado(numero)['datos']
+        msg.body(
+            f"🌴 *RESUMEN SOLICITUD DE VACACIONES*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👷 Operario: {nombre_operario(numero)}\n"
+            f"📅 Inicio: {datos_vac.get('fecha_inicio','')}\n"
+            f"📅 Fin: {datos_vac.get('fecha_fin','')}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"¿Confirmas la solicitud? Responde *SÍ* o *NO*"
+        )
+
+    elif paso == 'vac_confirmar':
+        if es_confirmacion(incoming_msg):
+            datos_vac = get_estado(numero)['datos']
+            vac_id = guardar_vacacion(datos_vac, numero)
+            borrar_estado(numero)
+            fi = datos_vac.get('fecha_inicio','')
+            ff = datos_vac.get('fecha_fin','')
+            op_nombre = nombre_operario(numero)
+            # Notificar a Alberto
+            enviar_whatsapp(
+                SUPERVISOR_WA,
+                f"🌴 *SOLICITUD DE VACACIONES #{vac_id}*\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"👷 {op_nombre}\n"
+                f"📅 Del {fi} al {ff}\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"Responde:\n"
+                f"✅ *APROBAR {vac_id}*\n"
+                f"❌ *RECHAZAR {vac_id}*"
+            )
+            msg.body(f"✅ Solicitud enviada. Pendiente de aprobación por Alberto.")
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body("❌ Solicitud cancelada. Escribe *vacaciones* para empezar de nuevo.")
+        else:
+            msg.body("Responde *SÍ* para confirmar o *NO* para cancelar.")
 
     if use_meta:
         return 'OK', 200
@@ -1423,10 +1595,21 @@ def migrate():
                 pdf_descargado_at TIMESTAMP
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vacaciones (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100),
+                fecha_inicio VARCHAR(20),
+                fecha_fin VARCHAR(20),
+                fecha_solicitud VARCHAR(20),
+                estado VARCHAR(20) DEFAULT 'pendiente',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
-        return {'status': 'migración OK, tabla vehiculos creada'}, 200
+        return {'status': 'migración OK, tablas vehiculos y vacaciones creadas'}, 200
     except Exception as e:
         return {'error': str(e)}, 500
 
