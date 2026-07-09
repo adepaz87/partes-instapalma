@@ -61,9 +61,6 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
-        conn.commit()
-        cur.close()
-        conn.close()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS vehiculos (
                 id SERIAL PRIMARY KEY,
@@ -85,6 +82,8 @@ def init_db():
             )
         """)
         conn.commit()
+        cur.close()
+        conn.close()
         print("DB inicializada OK")
     except Exception as e:
         print(f"Error init DB: {e}")
