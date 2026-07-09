@@ -1386,31 +1386,34 @@ def webhook():
         set_dato(numero, 'total_gastos', incoming_msg)
         set_paso(numero, 'resumen_foto')
         msg.body(
-            "5️⃣ ¿Tienes algún *justificante o foto* para adjuntar?\n"
-            "Envía la imagen ahora o escribe *no* para continuar sin foto."
+            "5️⃣ Adjunta la *foto del justificante* 📎\n"
+            "_Es obligatoria para enviar el resumen._"
         )
 
     elif paso == 'resumen_foto':
-        # Puede ser foto o texto "no"
+        # Foto obligatoria — si no hay imagen, pedir de nuevo
         foto_url = media_url if media_url else ''
-        if normalizar(incoming_msg) in ['no', 'no tengo', 'sin foto', 'ninguna']:
-            foto_url = ''
-        set_dato(numero, 'foto_url', foto_url)
-        set_paso(numero, 'resumen_confirmar')
-        datos_r = get_estado(numero)['datos']
-        foto_txt = "📎 Con foto adjunta" if foto_url else "📎 Sin foto"
-        msg.body(
-            f"📊 *RESUMEN FIN DE MES*\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📅 Mes: {datos_r.get('mes','')}\n"
-            f"👷 {datos_r.get('nombre_operario','')}\n"
-            f"⏱ Horas extra: {datos_r.get('horas_extra','0')}\n"
-            f"🌴 Días vacaciones: {datos_r.get('dias_vacaciones','0')}\n"
-            f"💶 Total gastos: {datos_r.get('total_gastos','0')} €\n"
-            f"{foto_txt}\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"¿Es correcto? Responde *SÍ* o *NO*"
-        )
+        if not foto_url:
+            msg.body(
+                "⚠️ Necesito que adjuntes la *foto del justificante*.\n"
+                "Por favor envía la imagen para continuar."
+            )
+        else:
+            set_dato(numero, 'foto_url', foto_url)
+            set_paso(numero, 'resumen_confirmar')
+            datos_r = get_estado(numero)['datos']
+            msg.body(
+                f"📊 *RESUMEN FIN DE MES*\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"📅 Mes: {datos_r.get('mes','')}\n"
+                f"👷 {datos_r.get('nombre_operario','')}\n"
+                f"⏱ Horas extra: {datos_r.get('horas_extra','0')}\n"
+                f"🌴 Días vacaciones: {datos_r.get('dias_vacaciones','0')}\n"
+                f"💶 Total gastos: {datos_r.get('total_gastos','0')} €\n"
+                f"📎 Foto adjunta ✅\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"¿Es correcto? Responde *SÍ* o *NO*"
+            )
 
     elif paso == 'resumen_confirmar':
         if es_confirmacion(incoming_msg):
