@@ -906,14 +906,13 @@ def webhook():
 
     # Detectar arranque vehiculo
     if any(p in normalizar(incoming_msg) for p in MENSAJES_VEHICULO):
-        if not estado or estado.get('datos', {}).get('tipo') != 'vehiculo':
-            iniciar_vehiculo(numero)
-            msg.body(
-                "🚗 *Bot de Vehículos — Instapalma*\n\n"
-                "Vamos a registrar el parte mensual paso a paso.\n\n"
-                "1️⃣ ¿Cuál es la *matrícula* del vehículo?"
-            )
-            return str(resp)
+        iniciar_vehiculo(numero)
+        msg.body(
+            "🚗 *Bot de Vehículos — Instapalma*\n\n"
+            "Vamos a registrar el parte mensual paso a paso.\n\n"
+            "1️⃣ ¿Cuál es la *matrícula* del vehículo?"
+        )
+        return str(resp) if not use_meta else ('OK', 200)
 
     if not estado:
         if any(p in normalizar(incoming_msg) for p in MENSAJES_INICIO):
@@ -1390,14 +1389,38 @@ def migrate():
     try:
         conn = get_db()
         cur = conn.cursor()
+        # Columnas tabla partes
         for col, tipo in [('material_stock','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT'), ('pdf_descargado','BOOLEAN DEFAULT FALSE'), ('pdf_descargado_at','TIMESTAMP')]:
             try:
                 cur.execute(f"ALTER TABLE partes ADD COLUMN IF NOT EXISTS {col} {tipo}")
                 conn.commit()
             except Exception:
                 conn.rollback()
-        cur.close(); conn.close()
-        return {'status': 'migración OK'}, 200
+        # Crear tabla vehiculos si no existe
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS vehiculos (
+                id SERIAL PRIMARY KEY,
+                matricula VARCHAR(20),
+                marca_modelo VARCHAR(100),
+                mes VARCHAR(20),
+                km_inicio VARCHAR(20),
+                km_fin VARCHAR(20),
+                proximo_aceite VARCHAR(20),
+                estado_neumaticos TEXT,
+                conductores TEXT,
+                mantenimientos TEXT,
+                observaciones TEXT,
+                golpes TEXT,
+                operario VARCHAR(100),
+                created_at TIMESTAMP DEFAULT NOW(),
+                pdf_descargado BOOLEAN DEFAULT FALSE,
+                pdf_descargado_at TIMESTAMP
+            )
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {'status': 'migración OK, tabla vehiculos creada'}, 200
     except Exception as e:
         return {'error': str(e)}, 500
 
