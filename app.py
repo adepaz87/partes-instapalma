@@ -629,8 +629,10 @@ def iniciar_vehiculo(numero):
         print(f"Error iniciar_vehiculo: {e}")
 
 def guardar_vehiculo(datos, numero_operario):
+    conn = None
     try:
-        conn = get_db(); cur = conn.cursor()
+        conn = get_db()
+        cur = conn.cursor()
         cur.execute("""
             INSERT INTO vehiculos (matricula, marca_modelo, mes, km_inicio, km_fin,
                 proximo_aceite, estado_neumaticos, conductores, mantenimientos,
@@ -646,11 +648,19 @@ def guardar_vehiculo(datos, numero_operario):
             numero_operario
         ))
         vid = cur.fetchone()[0]
-        conn.commit(); cur.close(); conn.close()
+        conn.commit()
         return vid
     except Exception as e:
         print(f"Error guardar_vehiculo: {e}")
+        if conn:
+            conn.rollback()
         return None
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except:
+            pass
 
 def generar_pdf_vehiculo(datos):
     buffer = io.BytesIO()
