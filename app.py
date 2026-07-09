@@ -47,6 +47,7 @@ def init_db():
                 operarios TEXT,
                 albaranes TEXT,
                 material_stock TEXT,
+                devolucion_almacen TEXT,
                 descripcion TEXT,
                 terminado TEXT,
                 tiempo_restante TEXT,
@@ -130,8 +131,8 @@ def guardar_parte(datos, numero_operario):
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             datos.get('numero_parte'),
@@ -142,6 +143,7 @@ def guardar_parte(datos, numero_operario):
             datos.get('operarios'),
             datos.get('albaranes'),
             datos.get('material_stock'),
+            datos.get('devolucion_almacen', 'Ninguno'),
             datos.get('descripcion'),
             datos.get('terminado'),
             datos.get('tiempo_restante'),
@@ -426,6 +428,37 @@ def generar_pdf(datos):
     elements.append(t_mat)
     elements.append(Spacer(1, 0.3*cm))
 
+    # Devolución a almacén
+    elements.append(Paragraph("DEVOLUCION A ALMACEN", sec_style))
+    dev = datos.get('devolucion_almacen', 'Ninguno')
+    if normalizar(dev) == 'ninguno' or not dev:
+        dev_rows = [['Material', 'Cantidad'], ['—', '—']]
+    else:
+        dev_rows = [['Material', 'Cantidad']]
+        for linea in dev.split('\n'):
+            linea = linea.strip()
+            if not linea:
+                continue
+            if '—' in linea:
+                parts = linea.split('—', 1)
+            elif '-' in linea:
+                parts = linea.split('-', 1)
+            else:
+                parts = [linea, '']
+            dev_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
+    t_dev = Table(dev_rows, colWidths=[10*cm, 7*cm])
+    t_dev.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#e65100')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('PADDING', (0,0), (-1,-1), 6),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, GRIS]),
+    ]))
+    elements.append(t_dev)
+    elements.append(Spacer(1, 0.3*cm))
+
     # Descripción
     elements.append(Paragraph("DESCRIPCION DE TRABAJOS", sec_style))
     t_desc = Table([[datos.get('descripcion', '')]], colWidths=[17*cm])
@@ -551,6 +584,7 @@ def generar_resumen(datos):
     ops  = datos.get('operarios', 'Ninguno')
     albs = datos.get('albaranes', 'Ninguno')
     mat  = datos.get('material_stock', 'Ninguno')
+    dev  = datos.get('devolucion_almacen', 'Ninguno')
     desc = datos.get('descripcion', '-')
     term = datos.get('terminado', '-')
     trem = datos.get('tiempo_restante', '')
@@ -564,6 +598,7 @@ def generar_resumen(datos):
         f"👷 Operarios:\n{ops}\n"
         f"📦 Albaranes: {albs}\n"
         f"🏗️ Material stock: {mat}\n"
+        f"📦 Devolución almacén: {dev}\n"
         f"📝 Descripción: {desc}\n"
         f"🏁 Terminado: {linea_term}\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -574,6 +609,7 @@ def finalizar_parte(numero, datos):
     ops  = datos.get('operarios', 'Ninguno')
     albs = datos.get('albaranes', 'Ninguno')
     mat  = datos.get('material_stock', 'Ninguno')
+    dev  = datos.get('devolucion_almacen', 'Ninguno')
     desc = datos.get('descripcion', '-')
     term = datos.get('terminado', '-')
     trem = datos.get('tiempo_restante', '')
@@ -589,6 +625,7 @@ def finalizar_parte(numero, datos):
         f"👷 Operarios:\n{ops}\n"
         f"📦 Albaranes: {albs}\n"
         f"🏗️ Material stock: {mat}\n"
+        f"📦 Devolución almacén: {dev}\n"
         f"📝 {desc}\n"
         f"🏁 Terminado: {linea_term}\n"
         f"━━━━━━━━━━━━━━━━━━━━"
@@ -1225,13 +1262,24 @@ def webhook():
     elif paso == 'material_stock':
         val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
         set_dato(numero, 'material_stock', val)
+        set_paso(numero, 'devolucion_almacen')
+        msg.body(
+            "6️⃣ *Devolución a Almacén*\n\n"
+            "¿Devuelves algún material al almacén?\n"
+            "_Ejemplo: Cable 2.5mm² — 10m sobrantes_\n\n"
+            "Si no hay, escribe: *ninguno*"
+        )
+
+    elif paso == 'devolucion_almacen':
+        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
+        set_dato(numero, 'devolucion_almacen', val)
         set_paso(numero, 'descripcion')
-        msg.body("6️⃣ *Descripción* de los trabajos realizados:")
+        msg.body("7️⃣ *Descripción* de los trabajos realizados:")
 
     elif paso == 'descripcion':
         set_dato(numero, 'descripcion', incoming_msg)
         set_paso(numero, 'terminado')
-        msg.body("7️⃣ ¿El trabajo está *terminado*?\n\nResponde *SÍ* o *NO*")
+        msg.body("8️⃣ ¿El trabajo está *terminado*?\n\nResponde *SÍ* o *NO*")
 
     elif paso == 'terminado':
         if normalizar(incoming_msg) in ['si', 'sí', 's', 'yes']:
@@ -1242,7 +1290,7 @@ def webhook():
         elif normalizar(incoming_msg) in ['no', 'n']:
             set_dato(numero, 'terminado', 'No')
             set_paso(numero, 'tiempo_restante')
-            msg.body("8️⃣ ¿Cuánto tiempo queda para terminarlo?\n\n_Ejemplo: 2 días, media jornada, 3 horas..._")
+            msg.body("9️⃣ ¿Cuánto tiempo queda para terminarlo?\n\n_Ejemplo: 2 días, media jornada, 3 horas..._")
         else:
             msg.body("Responde *SÍ* si está terminado o *NO* si falta trabajo.")
 
@@ -1706,13 +1754,13 @@ def admin_insert():
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             datos.get('numero_parte'), datos.get('fecha'), datos.get('operario'),
             datos.get('cliente'), datos.get('obra'), datos.get('operarios'),
-            datos.get('albaranes'), datos.get('material_stock'), datos.get('descripcion'),
-            datos.get('terminado'), datos.get('tiempo_restante')
+            datos.get('albaranes'), datos.get('material_stock'), datos.get('devolucion_almacen','Ninguno'),
+            datos.get('descripcion'), datos.get('terminado'), datos.get('tiempo_restante')
         ))
         conn.commit(); cur.close(); conn.close()
         return {'status': 'ok'}, 200
@@ -1747,7 +1795,7 @@ def migrate():
         conn = get_db()
         cur = conn.cursor()
         # Columnas tabla partes
-        for col, tipo in [('material_stock','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT'), ('pdf_descargado','BOOLEAN DEFAULT FALSE'), ('pdf_descargado_at','TIMESTAMP')]:
+        for col, tipo in [('material_stock','TEXT'), ('devolucion_almacen','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT'), ('pdf_descargado','BOOLEAN DEFAULT FALSE'), ('pdf_descargado_at','TIMESTAMP')]:
             try:
                 cur.execute(f"ALTER TABLE partes ADD COLUMN IF NOT EXISTS {col} {tipo}")
                 conn.commit()
