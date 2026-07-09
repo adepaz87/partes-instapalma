@@ -1675,17 +1675,37 @@ def migrate():
             CREATE TABLE IF NOT EXISTS vacaciones (
                 id SERIAL PRIMARY KEY,
                 operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
                 fecha_inicio VARCHAR(20),
                 fecha_fin VARCHAR(20),
+                dias_solicitados INTEGER DEFAULT 0,
                 fecha_solicitud VARCHAR(20),
                 estado VARCHAR(20) DEFAULT 'pendiente',
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Añadir columnas si la tabla ya existía sin ellas
+        for col, tipo in [('nombre_operario','VARCHAR(100)'), ('dias_solicitados','INTEGER DEFAULT 0')]:
+            try:
+                cur.execute(f"ALTER TABLE vacaciones ADD COLUMN IF NOT EXISTS {col} {tipo}")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS saldo_vacaciones (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100) UNIQUE,
+                nombre VARCHAR(100),
+                dias_totales INTEGER DEFAULT 23,
+                dias_usados INTEGER DEFAULT 0,
+                anio INTEGER DEFAULT 2026,
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
-        return {'status': 'migración OK, tablas vehiculos y vacaciones creadas'}, 200
+        return {'status': 'migración OK, tablas vehiculos, vacaciones y saldo_vacaciones creadas'}, 200
     except Exception as e:
         return {'error': str(e)}, 500
 
