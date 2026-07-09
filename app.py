@@ -105,6 +105,19 @@ def init_db():
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS resumen_mes (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
+                mes VARCHAR(30),
+                horas_extra VARCHAR(20),
+                dias_vacaciones VARCHAR(20),
+                total_gastos VARCHAR(30),
+                foto_url TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
@@ -607,8 +620,9 @@ def finalizar_parte(numero, datos):
     borrar_estado(numero)
 
 
-MENSAJES_VEHICULO  = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+MENSAJES_VEHICULO   = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
 MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
+MENSAJES_RESUMEN_MES = ['resumen mes', 'resumen del mes', 'resumen mensual', 'cierre mes', 'cierre del mes', 'resumen fin de mes', 'fin de mes']
 
 def iniciar_vacaciones(numero):
     try:
@@ -1005,11 +1019,15 @@ def webhook():
             msg_obj = entry['messages'][0]
             incoming_msg = msg_obj.get('text', {}).get('body', '').strip()
             numero = 'whatsapp:+' + msg_obj['from']
+            media_url = ''
         except (KeyError, IndexError):
             return 'OK', 200
     else:
         incoming_msg = request.form.get('Body', '').strip()
         numero = request.form.get('From', '')
+        # Capturar media adjunta (foto enviada por el operario)
+        num_media = int(request.form.get('NumMedia', 0))
+        media_url = request.form.get('MediaUrl0', '') if num_media > 0 else ''
 
     use_meta = request.is_json
 
@@ -1048,6 +1066,25 @@ def webhook():
             "🚗 *Bot de Vehículos — Instapalma*\n\n"
             "Vamos a registrar el parte mensual paso a paso.\n\n"
             "1️⃣ ¿Cuál es la *matrícula* del vehículo?"
+        )
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Detectar resumen fin de mes
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_RESUMEN_MES):
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_conocido = OPERARIOS.get(num_limpio, '')
+        if nombre_conocido:
+            set_dato(numero, 'nombre_operario', nombre_conocido)
+            set_paso(numero, 'resumen_mes')
+        else:
+            set_paso(numero, 'resumen_nombre')
+        msg.body(
+            "📊 *RESUMEN FIN DE MES — Instapalma*\n\n"
+            + (f"Hola {nombre_conocido}! 👷\n\n" if nombre_conocido else "")
+            + "1️⃣ ¿De qué *mes* es el resumen?\n_Ejemplo: Junio 2026_"
+            if nombre_conocido else
+            "📊 *RESUMEN FIN DE MES — Instapalma*\n\n"
+            "Para empezar, ¿cuál es tu *nombre completo*?"
         )
         return str(resp) if not use_meta else ('OK', 200)
 
@@ -1321,6 +1358,69 @@ def webhook():
         elif es_cancelacion(incoming_msg):
             borrar_estado(numero)
             msg.body("❌ Parte cancelado. Escribe *vehiculo* para crear uno nuevo.")
+        else:
+            msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
+
+    # ── Flujo Resumen Fin de Mes ──────────────────────────────────────────────
+    elif paso == 'resumen_nombre':
+        set_dato(numero, 'nombre_operario', incoming_msg)
+        set_paso(numero, 'resumen_mes')
+        msg.body(f"👋 Hola *{incoming_msg}*!\n\n1️⃣ ¿De qué *mes* es el resumen?\n_Ejemplo: Junio 2026_")
+
+    elif paso == 'resumen_mes':
+        set_dato(numero, 'mes', incoming_msg)
+        set_paso(numero, 'resumen_horas')
+        msg.body("2️⃣ ¿Cuántas *horas extra* has realizado este mes?\n_Ejemplo: 8_")
+
+    elif paso == 'resumen_horas':
+        set_dato(numero, 'horas_extra', incoming_msg)
+        set_paso(numero, 'resumen_vacaciones')
+        msg.body("3️⃣ ¿Cuántos *días de vacaciones* has disfrutado este mes?\n_Ejemplo: 5_")
+
+    elif paso == 'resumen_vacaciones':
+        set_dato(numero, 'dias_vacaciones', incoming_msg)
+        set_paso(numero, 'resumen_gastos')
+        msg.body("4️⃣ ¿Cuál es el *total de gastos* del mes? (en €)\n_Ejemplo: 127.50_")
+
+    elif paso == 'resumen_gastos':
+        set_dato(numero, 'total_gastos', incoming_msg)
+        set_paso(numero, 'resumen_foto')
+        msg.body(
+            "5️⃣ ¿Tienes algún *justificante o foto* para adjuntar?\n"
+            "Envía la imagen ahora o escribe *no* para continuar sin foto."
+        )
+
+    elif paso == 'resumen_foto':
+        # Puede ser foto o texto "no"
+        foto_url = media_url if media_url else ''
+        if normalizar(incoming_msg) in ['no', 'no tengo', 'sin foto', 'ninguna']:
+            foto_url = ''
+        set_dato(numero, 'foto_url', foto_url)
+        set_paso(numero, 'resumen_confirmar')
+        datos_r = get_estado(numero)['datos']
+        foto_txt = "📎 Con foto adjunta" if foto_url else "📎 Sin foto"
+        msg.body(
+            f"📊 *RESUMEN FIN DE MES*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 Mes: {datos_r.get('mes','')}\n"
+            f"👷 {datos_r.get('nombre_operario','')}\n"
+            f"⏱ Horas extra: {datos_r.get('horas_extra','0')}\n"
+            f"🌴 Días vacaciones: {datos_r.get('dias_vacaciones','0')}\n"
+            f"💶 Total gastos: {datos_r.get('total_gastos','0')} €\n"
+            f"{foto_txt}\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"¿Es correcto? Responde *SÍ* o *NO*"
+        )
+
+    elif paso == 'resumen_confirmar':
+        if es_confirmacion(incoming_msg):
+            datos_r = get_estado(numero)['datos']
+            borrar_estado(numero)
+            finalizar_resumen_mes(numero, datos_r)
+            msg.body("✅ Resumen enviado. Te llegará el PDF en un momento.")
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body("❌ Cancelado. Escribe *resumen mes* para empezar de nuevo.")
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
 
@@ -1702,10 +1802,23 @@ def migrate():
                 updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS resumen_mes (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
+                mes VARCHAR(30),
+                horas_extra VARCHAR(20),
+                dias_vacaciones VARCHAR(20),
+                total_gastos VARCHAR(30),
+                foto_url TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit()
         cur.close()
         conn.close()
-        return {'status': 'migración OK, tablas vehiculos, vacaciones y saldo_vacaciones creadas'}, 200
+        return {'status': 'migración OK, tablas vehiculos, vacaciones, saldo_vacaciones y resumen_mes creadas'}, 200
     except Exception as e:
         return {'error': str(e)}, 500
 
@@ -1884,6 +1997,260 @@ def editar_saldo(op=None):
     </div>
     <div style='padding:0 30px'><a href='/vacaciones' class='back'>← Volver</a></div>
     </body></html>"""
+
+
+# ── Resumen Fin de Mes ────────────────────────────────────────────────────────
+
+def guardar_resumen_mes(datos, numero_operario):
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        nombre = datos.get('nombre_operario', nombre_operario(numero_operario))
+        cur.execute("""
+            INSERT INTO resumen_mes (operario, nombre_operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            RETURNING id
+        """, (
+            numero_operario,
+            nombre,
+            datos.get('mes', ''),
+            datos.get('horas_extra', '0'),
+            datos.get('dias_vacaciones', '0'),
+            datos.get('total_gastos', '0'),
+            datos.get('foto_url', ''),
+        ))
+        rid = cur.fetchone()[0]
+        conn.commit()
+        return rid
+    except Exception as e:
+        print(f"Error guardar_resumen_mes: {e}")
+        if conn: conn.rollback()
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+
+def generar_pdf_resumen_mes(datos):
+    """Genera PDF del resumen de fin de mes y devuelve bytes."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+    AZUL = colors.HexColor('#1a3a5c')
+    GRIS = colors.HexColor('#f5f5f5')
+
+    titulo_style = ParagraphStyle('titulo', fontSize=20, textColor=AZUL,
+        alignment=TA_CENTER, spaceAfter=4, fontName='Helvetica-Bold')
+    pie_style = ParagraphStyle('pie', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+
+    import os as _os
+    LOGO_PATH = _os.path.join(_os.path.dirname(__file__), 'logo.jpg')
+    if _os.path.exists(LOGO_PATH):
+        _logo_ratio = 1024 / 219
+        _logo_w = 4 * cm
+        _logo_h = _logo_w / _logo_ratio
+        logo_img = RLImage(LOGO_PATH, width=_logo_w, height=_logo_h)
+    else:
+        logo_img = Paragraph("INSTAPALMA", titulo_style)
+
+    cab_title_style = ParagraphStyle('cab_title', fontName='Helvetica-Bold', fontSize=16,
+        textColor=AZUL, alignment=1, leading=20)
+    cab = Table([[logo_img, Paragraph('RESUMEN FIN DE MES', cab_title_style)]], colWidths=[5*cm, 12*cm])
+    cab.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    elements.append(cab)
+    elements.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=10))
+    elements.append(Spacer(1, 0.3*cm))
+
+    filas = [
+        ['Mes',                   datos.get('mes','')],
+        ['Operario',              datos.get('nombre_operario','')],
+        ['Horas extra',           datos.get('horas_extra','0')],
+        ['Días vacaciones',       datos.get('dias_vacaciones','0')],
+        ['Total gastos',          f"{datos.get('total_gastos','0')} €"],
+    ]
+    t = Table(filas, colWidths=[5*cm, 12*cm])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (0,-1), AZUL),
+        ('TEXTCOLOR', (0,0), (0,-1), colors.white),
+        ('FONTNAME', (0,0), (0,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 11),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+        ('PADDING', (0,0), (-1,-1), 8),
+        ('ROWBACKGROUNDS', (1,0), (1,-1), [colors.white, GRIS]),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 0.5*cm))
+
+    # Foto si existe
+    foto_url = datos.get('foto_url', '')
+    if foto_url:
+        try:
+            import urllib.request as _ur
+            import tempfile, os as _os
+            suffix = '.jpg'
+            if '.png' in foto_url.lower(): suffix = '.png'
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            _ur.urlretrieve(foto_url, tmp.name)
+            sec_style = ParagraphStyle('sec', fontSize=10, textColor=colors.white,
+                backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=4, spaceBefore=6, borderPad=4)
+            elements.append(Paragraph('JUSTIFICANTE / FOTO', sec_style))
+            elements.append(Spacer(1, 0.2*cm))
+            img_w = 14*cm
+            from PIL import Image as PILImg
+            with PILImg.open(tmp.name) as im:
+                w, h = im.size
+                img_h = img_w * h / w
+                if img_h > 18*cm:
+                    img_h = 18*cm
+                    img_w = img_h * w / h
+            foto_img = RLImage(tmp.name, width=img_w, height=img_h)
+            elements.append(foto_img)
+            _os.unlink(tmp.name)
+        except Exception as e:
+            print(f"Error foto PDF: {e}")
+
+    elements.append(Spacer(1, 1*cm))
+    elements.append(Paragraph("Instapalma · Resumen generado automáticamente", pie_style))
+
+    doc.build(elements)
+    return buffer.getvalue()
+
+
+def subir_pdf_resumen_mes(pdf_bytes, rid):
+    """Sube el PDF a Cloudinary y devuelve la URL."""
+    try:
+        import cloudinary, cloudinary.uploader
+        cloudinary.config(
+            cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME',''),
+            api_key=os.environ.get('CLOUDINARY_API_KEY',''),
+            api_secret=os.environ.get('CLOUDINARY_API_SECRET','')
+        )
+        import base64 as _b64
+        b64 = _b64.b64encode(pdf_bytes).decode()
+        result = cloudinary.uploader.upload(
+            f"data:application/pdf;base64,{b64}",
+            public_id=f"resumen_mes_{rid}",
+            resource_type='raw',
+            folder='instapalma_resumenes'
+        )
+        return result.get('secure_url','')
+    except Exception as e:
+        print(f"Error subir PDF resumen: {e}")
+        return ''
+
+
+def finalizar_resumen_mes(numero, datos):
+    """Guarda, genera PDF y envía a supervisor y operario."""
+    import threading
+    def _enviar():
+        rid = guardar_resumen_mes(datos, numero)
+        nombre_op = datos.get('nombre_operario', nombre_operario(numero))
+        mes = datos.get('mes','')
+        horas = datos.get('horas_extra','0')
+        dias_vac = datos.get('dias_vacaciones','0')
+        gastos = datos.get('total_gastos','0')
+
+        texto = (
+            f"📊 *RESUMEN FIN DE MES #{rid}*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 Mes: {mes}\n"
+            f"👷 {nombre_op}\n"
+            f"⏱ Horas extra: {horas}\n"
+            f"🌴 Días vacaciones: {dias_vac}\n"
+            f"💶 Total gastos: {gastos} €\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
+        )
+
+        # Generar y subir PDF
+        pdf_bytes = generar_pdf_resumen_mes(datos)
+        pdf_url = subir_pdf_resumen_mes(pdf_bytes, rid)
+
+        # Enviar al supervisor
+        enviar_whatsapp(SUPERVISOR_WA, texto, media_url=pdf_url if pdf_url else None)
+        # Enviar al operario
+        op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
+        enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente. Aquí tienes tu copia:", media_url=pdf_url if pdf_url else None)
+
+    t = threading.Thread(target=_enviar, daemon=True)
+    t.start()
+
+
+# ── Panel web Resumen Fin de Mes ──────────────────────────────────────────────
+@app.route('/resumenes')
+def panel_resumenes():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            SELECT id, nombre_operario, operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url, created_at
+            FROM resumen_mes ORDER BY created_at DESC
+        """)
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+
+    filas = ''
+    for r in rows:
+        rid, nombre, op, mes, horas, dias_vac, gastos, foto_url, cat = r
+        foto_link = f"<a href='{foto_url}' target='_blank'>📎 Ver</a>" if foto_url else '-'
+        fecha = str(cat)[:10] if cat else ''
+        filas += (
+            f"<tr>"
+            f"<td>{rid}</td>"
+            f"<td>{nombre or op}</td>"
+            f"<td>{mes}</td>"
+            f"<td>{horas}</td>"
+            f"<td>{dias_vac}</td>"
+            f"<td>{gastos} €</td>"
+            f"<td>{foto_link}</td>"
+            f"<td>{fecha}</td>"
+            f"<td><a href='/resumenes/{rid}/pdf' style='color:#1a3a5c;font-size:12px'>⬇ PDF</a></td>"
+            f"</tr>"
+        )
+    if not filas:
+        filas = "<tr><td colspan=9 class='empty'>Sin resúmenes aún</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
+    <title>Resumen Fin de Mes — Instapalma</title>
+    <style>{CSS_BASE}</style></head><body>
+    <header><div><h1>📊 Resumen Fin de Mes</h1><p>Instapalma</p></div></header>
+    <div class='wrap' style='padding-top:20px'>
+    <table><thead><tr>
+    <th>#</th><th>Operario</th><th>Mes</th><th>H. Extra</th><th>Días Vac.</th><th>Gastos</th><th>Foto</th><th>Fecha</th><th>PDF</th>
+    </tr></thead><tbody>{filas}</tbody></table>
+    </div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    </body></html>"""
+
+
+@app.route('/resumenes/<int:rid>/pdf')
+def pdf_resumen(rid):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT nombre_operario, operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url FROM resumen_mes WHERE id=%s", (rid,))
+        r = cur.fetchone(); cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+    if not r:
+        return "No encontrado", 404
+    datos = {
+        'nombre_operario': r[0] or r[1],
+        'mes': r[2], 'horas_extra': r[3],
+        'dias_vacaciones': r[4], 'total_gastos': r[5],
+        'foto_url': r[6] or ''
+    }
+    pdf_bytes = generar_pdf_resumen_mes(datos)
+    nombre_fichero = f"RESUMEN-{(r[2] or 'MES').replace(' ','_').upper()}-{(r[0] or '').replace(' ','_').upper()}.pdf"
+    from flask import Response
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{nombre_fichero}"'})
 
 
 if __name__ == '__main__':
