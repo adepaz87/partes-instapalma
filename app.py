@@ -498,13 +498,40 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
 
 def enviar_whatsapp(destino, mensaje, media_url=None):
     try:
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
+        import urllib.request as _ur
+        # Limpiar el número destino (quitar whatsapp: y +)
+        to_number = destino.replace('whatsapp:', '').replace('+', '').strip()
+        META_TOKEN = os.environ.get('META_TOKEN', '')
+        PHONE_ID   = os.environ.get('META_PHONE_ID', '1214142395112377')
         if media_url:
-            kwargs['media_url'] = [media_url]
-        client.messages.create(**kwargs)
+            # Enviar documento/imagen
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": to_number,
+                "type": "document",
+                "document": {"link": media_url, "caption": mensaje}
+            }
+        else:
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": to_number,
+                "type": "text",
+                "text": {"body": mensaje, "preview_url": False}
+            }
+        data = json.dumps(payload).encode()
+        req = _ur.Request(
+            f"https://graph.facebook.com/v19.0/{PHONE_ID}/messages",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {META_TOKEN}",
+                "Content-Type": "application/json"
+            }
+        )
+        with _ur.urlopen(req) as r:
+            resp = json.loads(r.read())
+            print(f"Meta WA enviado OK: {resp.get('messages', [{}])[0].get('id','?')}")
     except Exception as e:
-        print(f"Error WA: {e}")
+        print(f"Error WA Meta: {e}")
 
 def generar_resumen(datos):
     ops  = datos.get('operarios', 'Ninguno')
@@ -846,10 +873,41 @@ def webhook_verify():
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    incoming_msg = request.form.get('Body', '').strip()
-    numero = request.form.get('From', '')
+    # Detectar si es Meta Cloud API (JSON) o Twilio (form)
+    if request.is_json:
+        data = request.get_json()
+        try:
+            entry = data['entry'][0]['changes'][0]['value']
+            msg_obj = entry['messages'][0]
+            incoming_msg = msg_obj.get('text', {}).get('body', '').strip()
+            numero = 'whatsapp:+' + msg_obj['from']
+        except (KeyError, IndexError):
+            return 'OK', 200
+    else:
+        incoming_msg = request.form.get('Body', '').strip()
+        numero = request.form.get('From', '')
 
-    resp = MessagingResponse()
+    use_meta = request.is_json
+
+    class MetaMsg:
+        def __init__(self):
+            self._body = None
+        def body(self, text):
+            self._body = text
+            enviar_whatsapp(numero, text)
+
+    class MetaResp:
+        def __init__(self):
+            self._msg = MetaMsg()
+        def message(self):
+            return self._msg
+        def __str__(self):
+            return ''
+
+    if use_meta:
+        resp = MetaResp()
+    else:
+        resp = MessagingResponse()
     msg = resp.message()
     estado = get_estado(numero)
 
@@ -1092,6 +1150,8 @@ def webhook():
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
 
+    if use_meta:
+        return 'OK', 200
     return str(resp)
 
 CSS_BASE = """
