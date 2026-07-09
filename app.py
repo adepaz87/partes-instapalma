@@ -809,44 +809,50 @@ def generar_resumen_vehiculo(datos):
     )
 
 def finalizar_vehiculo(numero, datos):
+    import threading
     mat = datos.get('matricula','').replace(' ','_').upper()
     mes = datos.get('mes','').replace('/','_').replace(' ','_')
     nombre_pdf = f"{mes}-{mat}-VEHICULO.pdf"
     pdf_bytes = generar_pdf_vehiculo(datos)
 
-    try:
-        msg_email = MIMEMultipart()
-        msg_email['From']    = GMAIL_USER
-        msg_email['To']      = ', '.join([SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2])
-        msg_email['Subject'] = f"Parte Vehiculo - {mat} - {mes}"
-        body_txt = (
-            f"Parte de vehiculo generado.\n\n"
-            f"Matricula: {datos.get('matricula','')}\n"
-            f"Modelo: {datos.get('marca_modelo','')}\n"
-            f"Mes: {mes}\n"
-            f"Km inicio: {datos.get('km_inicio','')} | Km fin: {datos.get('km_fin','')}\n"
-        )
-        msg_email.attach(MIMEText(body_txt, 'plain'))
-        part = MIMEApplication(pdf_bytes, Name=nombre_pdf)
-        part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
-        msg_email.attach(part)
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
-            srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
-            srv.sendmail(GMAIL_USER, [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2], msg_email.as_string())
-        print("Email vehiculo OK")
-    except Exception as e:
-        print(f"Error email vehiculo: {e}")
-
+    # Guardar en DB y enviar WhatsApp primero (no bloquear)
     vid = guardar_vehiculo(datos, numero)
     BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
     if vid:
         pdf_url = f"https://{BOT_URL}/vehiculos/{vid}/pdf"
         caption = f"Parte Vehiculo - {mat} - {mes}\nKm: {datos.get('km_inicio','')} a {datos.get('km_fin','')}"
-        enviar_whatsapp(SUPERVISOR_WA,   caption, media_url=pdf_url)
-        op_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
+        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        op_wa = numero if numero.startswith("whatsapp:") else f"whatsapp:{numero}"
         enviar_whatsapp(op_wa, "Parte de vehiculo enviado. Aqui tienes tu copia:", media_url=pdf_url)
 
     borrar_estado(numero)
+
+    # Email en hilo separado para no bloquear la respuesta
+    def enviar_email_vehiculo():
+        try:
+            msg_email = MIMEMultipart()
+            msg_email['From']    = GMAIL_USER
+            msg_email['To']      = ', '.join([SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2])
+            msg_email['Subject'] = f"[VEHICULO] Parte - {mat} - {mes}"
+            body_txt = (
+                f"Parte de vehiculo generado.\n\n"
+                f"Matricula: {datos.get('matricula','')}\n"
+                f"Modelo: {datos.get('marca_modelo','')}\n"
+                f"Mes: {mes}\n"
+                f"Km inicio: {datos.get('km_inicio','')} | Km fin: {datos.get('km_fin','')}\n"
+            )
+            msg_email.attach(MIMEText(body_txt, 'plain'))
+            part = MIMEApplication(pdf_bytes, Name=nombre_pdf)
+            part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
+            msg_email.attach(part)
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
+                srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+                srv.sendmail(GMAIL_USER, [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2], msg_email.as_string())
+            print("Email vehiculo OK")
+        except Exception as e:
+            print(f"Error email vehiculo: {e}")
+
+    threading.Thread(target=enviar_email_vehiculo, daemon=True).start()
 
 
 @app.route('/webhook', methods=['GET'])
