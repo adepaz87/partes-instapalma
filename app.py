@@ -126,7 +126,7 @@ with app.app_context():
 # ── Configuración ─────────────────────────────────────────────────────────────
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN  = os.environ.get('TWILIO_AUTH_TOKEN', '')
-TWILIO_WA_NUMBER   = os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+15554087014')
+TWILIO_WA_NUMBER   = os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+19784402048')
 SUPERVISOR_EMAIL_1 = 'alberto@adpb.es'
 SUPERVISOR_EMAIL_2 = 'adm2@adpb.es'
 SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
@@ -498,40 +498,18 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
 
 def enviar_whatsapp(destino, mensaje, media_url=None):
     try:
-        import urllib.request as _ur
-        # Limpiar el número destino (quitar whatsapp: y +)
-        to_number = destino.replace('whatsapp:', '').replace('+', '').strip()
-        META_TOKEN = os.environ.get('META_TOKEN', '')
-        PHONE_ID   = os.environ.get('META_PHONE_ID', '1214142395112377')
+        from twilio.rest import Client
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        # Asegurar formato whatsapp:+XXXXX
+        if not destino.startswith('whatsapp:'):
+            destino = 'whatsapp:+' + destino.lstrip('+')
+        kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
         if media_url:
-            # Enviar documento/imagen
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": to_number,
-                "type": "document",
-                "document": {"link": media_url, "caption": mensaje}
-            }
-        else:
-            payload = {
-                "messaging_product": "whatsapp",
-                "to": to_number,
-                "type": "text",
-                "text": {"body": mensaje, "preview_url": False}
-            }
-        data = json.dumps(payload).encode()
-        req = _ur.Request(
-            f"https://graph.facebook.com/v19.0/{PHONE_ID}/messages",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {META_TOKEN}",
-                "Content-Type": "application/json"
-            }
-        )
-        with _ur.urlopen(req) as r:
-            resp = json.loads(r.read())
-            print(f"Meta WA enviado OK: {resp.get('messages', [{}])[0].get('id','?')}")
+            kwargs['media_url'] = [media_url]
+        client.messages.create(**kwargs)
+        print(f"WA enviado OK a {destino}")
     except Exception as e:
-        print(f"Error WA Meta: {e}")
+        print(f"Error WA: {e}")
 
 def generar_resumen(datos):
     ops  = datos.get('operarios', 'Ninguno')
