@@ -85,11 +85,24 @@ def init_db():
             CREATE TABLE IF NOT EXISTS vacaciones (
                 id SERIAL PRIMARY KEY,
                 operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
                 fecha_inicio VARCHAR(20),
                 fecha_fin VARCHAR(20),
+                dias_solicitados INTEGER DEFAULT 0,
                 fecha_solicitud VARCHAR(20),
                 estado VARCHAR(20) DEFAULT 'pendiente',
                 created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS saldo_vacaciones (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100) UNIQUE,
+                nombre VARCHAR(100),
+                dias_totales INTEGER DEFAULT 23,
+                dias_usados INTEGER DEFAULT 0,
+                anio INTEGER DEFAULT 2026,
+                updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
         conn.commit()
@@ -615,28 +628,63 @@ def iniciar_vacaciones(numero):
     except Exception as e:
         print(f"Error iniciar_vacaciones: {e}")
 
+def calcular_dias_laborables(fecha_inicio, fecha_fin):
+    """Calcula días laborables (lun-vie) entre dos fechas en formato DD/MM/YYYY."""
+    try:
+        from datetime import datetime as dt, timedelta
+        fi = dt.strptime(fecha_inicio, '%d/%m/%Y')
+        ff = dt.strptime(fecha_fin, '%d/%m/%Y')
+        dias = 0
+        current = fi
+        while current <= ff:
+            if current.weekday() < 5:  # lun-vie
+                dias += 1
+            current += timedelta(days=1)
+        return dias
+    except:
+        return 0
+
+def get_saldo_vacaciones(numero_operario):
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT dias_totales, dias_usados, nombre FROM saldo_vacaciones WHERE operario=%s", (numero_operario,))
+        row = cur.fetchone()
+        return row  # (dias_totales, dias_usados, nombre) o None
+    except:
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
 def guardar_vacacion(datos, numero_operario):
     conn = None
     try:
         conn = get_db()
         cur = conn.cursor()
+        dias = calcular_dias_laborables(datos.get('fecha_inicio',''), datos.get('fecha_fin',''))
+        nombre = datos.get('nombre_operario', nombre_operario(numero_operario))
         cur.execute("""
-            INSERT INTO vacaciones (operario, fecha_inicio, fecha_fin, fecha_solicitud, estado)
-            VALUES (%s, %s, %s, %s, 'pendiente')
+            INSERT INTO vacaciones (operario, nombre_operario, fecha_inicio, fecha_fin, dias_solicitados, fecha_solicitud, estado)
+            VALUES (%s, %s, %s, %s, %s, %s, 'pendiente')
             RETURNING id
         """, (
             numero_operario,
+            nombre,
             datos.get('fecha_inicio',''),
             datos.get('fecha_fin',''),
+            dias,
             datos.get('fecha_solicitud','')
         ))
         vid = cur.fetchone()[0]
         conn.commit()
-        return vid
+        return vid, dias
     except Exception as e:
         print(f"Error guardar_vacacion: {e}")
         if conn: conn.rollback()
-        return None
+        return None, 0
     finally:
         try:
             if conn: conn.close()
@@ -647,10 +695,17 @@ def aprobar_rechazar_vacacion(vac_id, estado):
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("UPDATE vacaciones SET estado=%s WHERE id=%s RETURNING operario, fecha_inicio, fecha_fin", (estado, vac_id))
+        cur.execute("UPDATE vacaciones SET estado=%s WHERE id=%s RETURNING operario, nombre_operario, fecha_inicio, fecha_fin, dias_solicitados", (estado, vac_id))
         row = cur.fetchone()
+        if row and estado == 'aprobada':
+            # Descontar días del saldo
+            operario, nombre, fi, ff, dias = row
+            cur.execute("""
+                UPDATE saldo_vacaciones SET dias_usados = dias_usados + %s, updated_at=NOW()
+                WHERE operario=%s
+            """, (dias or 0, operario))
         conn.commit()
-        return row  # (operario, fecha_inicio, fecha_fin)
+        return row  # (operario, nombre, fecha_inicio, fecha_fin, dias)
     except Exception as e:
         print(f"Error aprobar_rechazar: {e}")
         if conn: conn.rollback()
@@ -659,6 +714,7 @@ def aprobar_rechazar_vacacion(vac_id, estado):
         try:
             if conn: conn.close()
         except: pass
+
 
 INIT_VEHICULOS_SQL = """
     CREATE TABLE IF NOT EXISTS vehiculos (
@@ -998,11 +1054,25 @@ def webhook():
     # Detectar solicitud de vacaciones
     if any(p in normalizar(incoming_msg) for p in MENSAJES_VACACIONES):
         iniciar_vacaciones(numero)
-        msg.body(
-            "🌴 *Solicitud de Vacaciones — Instapalma*\n\n"
-            "Vamos a registrar tu solicitud.\n\n"
-            "1️⃣ ¿Cuál es la *fecha de inicio*?\n_Ejemplo: 14/07/2026_"
-        )
+        # Ver si el número está registrado
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_conocido = OPERARIOS.get(num_limpio, '')
+        if nombre_conocido:
+            set_dato(numero, 'nombre_operario', nombre_conocido)
+            set_paso(numero, 'vac_inicio')
+            saldo = get_saldo_vacaciones(numero.replace('whatsapp:','').replace('+','').strip())
+            saldo_txt = f"\n📊 Días disponibles: *{saldo[0] - saldo[1]}* de {saldo[0]}" if saldo else ""
+            msg.body(
+                f"🌴 *Solicitud de Vacaciones — Instapalma*\n"
+                f"Hola {nombre_conocido}!{saldo_txt}\n\n"
+                f"1️⃣ ¿Cuál es la *fecha de inicio*?\n_Ejemplo: 14/07/2026_"
+            )
+        else:
+            set_paso(numero, 'vac_nombre')
+            msg.body(
+                "🌴 *Solicitud de Vacaciones — Instapalma*\n\n"
+                "Para continuar, ¿cuál es tu *nombre completo*?"
+            )
         return str(resp) if not use_meta else ('OK', 200)
 
     # Gestión de aprobación por Alberto (APROBAR/RECHAZAR ID)
@@ -1016,30 +1086,17 @@ def webhook():
             estado_nuevo = 'aprobada' if accion == 'aprobar' else 'rechazada'
             row = aprobar_rechazar_vacacion(vac_id, estado_nuevo)
             if row:
-                op_num, fi, ff = row
-                op_nombre = nombre_operario(op_num)
+                op_num, op_nombre_bd, fi, ff, dias = row
+                op_nombre = op_nombre_bd or nombre_operario(op_num)
                 op_wa = op_num if op_num.startswith('whatsapp:') else f"whatsapp:{op_num}"
+                num_limpio = op_num.replace('whatsapp:','').replace('+','').strip()
+                saldo = get_saldo_vacaciones(num_limpio)
                 if estado_nuevo == 'aprobada':
-                    enviar_whatsapp(op_wa, f"✅ *Vacaciones aprobadas*\nTus vacaciones del {fi} al {ff} han sido aprobadas por Alberto. ¡Disfrútalas! 🌴")
-                    msg.body(f"✅ Vacaciones de {op_nombre} ({fi} – {ff}) aprobadas. Te lo añado al calendario.")
-                    # Notificar a Zapia para añadir al calendario
-                    zapia_url = os.environ.get('ZAPIA_NOTIFY_URL','')
-                    zapia_token = os.environ.get('ZAPIA_NOTIFY_TOKEN','')
-                    if zapia_url:
-                        import urllib.request as _ur
-                        payload = json.dumps({
-                            "token": zapia_token,
-                            "action": "calendar_event",
-                            "title": f"Vacaciones - {op_nombre} {fi} - {ff}",
-                            "start": fi,
-                            "end": ff
-                        }).encode()
-                        try:
-                            _ur.urlopen(_ur.Request(zapia_url, data=payload,
-                                headers={"Content-Type":"application/json"}), timeout=5)
-                        except: pass
+                    saldo_txt = f"\n📊 Te quedan *{saldo[0] - saldo[1]}* días de vacaciones." if saldo else ""
+                    enviar_whatsapp(op_wa, f"✅ *Vacaciones aprobadas*\nTus vacaciones del {fi} al {ff} ({dias} días) han sido aprobadas por Alberto. ¡Disfrútalas! 🌴{saldo_txt}")
+                    msg.body(f"✅ Vacaciones de {op_nombre} ({fi} – {ff}, {dias} días) aprobadas.")
                 else:
-                    enviar_whatsapp(op_wa, f"❌ *Vacaciones no aprobadas*\nTu solicitud de vacaciones del {fi} al {ff} no ha sido aprobada. Contacta con Alberto para más información.")
+                    enviar_whatsapp(op_wa, f"❌ *Vacaciones no aprobadas*\nTu solicitud del {fi} al {ff} no ha sido aprobada. Contacta con Alberto.")
                     msg.body(f"❌ Vacaciones de {op_nombre} rechazadas. El operario ha sido notificado.")
             else:
                 msg.body(f"No encontré la solicitud #{vac_id}. Verifica el número.")
@@ -1268,6 +1325,14 @@ def webhook():
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
 
     # ── Flujo vacaciones ──────────────────────────────────────────────────────
+    elif paso == 'vac_nombre':
+        set_dato(numero, 'nombre_operario', incoming_msg)
+        set_paso(numero, 'vac_inicio')
+        msg.body(
+            f"👋 Hola *{incoming_msg}*\n\n"
+            f"1️⃣ ¿Cuál es la *fecha de inicio* de tus vacaciones?\n_Ejemplo: 14/07/2026_"
+        )
+
     elif paso == 'vac_inicio':
         set_dato(numero, 'fecha_inicio', incoming_msg)
         set_paso(numero, 'vac_fin')
@@ -1277,12 +1342,20 @@ def webhook():
         set_dato(numero, 'fecha_fin', incoming_msg)
         set_paso(numero, 'vac_confirmar')
         datos_vac = get_estado(numero)['datos']
+        fi = datos_vac.get('fecha_inicio','')
+        ff = incoming_msg
+        dias = calcular_dias_laborables(fi, ff)
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        saldo = get_saldo_vacaciones(num_limpio)
+        saldo_txt = f"\n📊 Días disponibles tras solicitud: *{saldo[0] - saldo[1] - dias}* de {saldo[0]}" if saldo else ""
+        op_nombre = datos_vac.get('nombre_operario', nombre_operario(numero))
         msg.body(
             f"🌴 *RESUMEN SOLICITUD DE VACACIONES*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"👷 Operario: {nombre_operario(numero)}\n"
-            f"📅 Inicio: {datos_vac.get('fecha_inicio','')}\n"
-            f"📅 Fin: {datos_vac.get('fecha_fin','')}\n"
+            f"👷 {op_nombre}\n"
+            f"📅 Inicio: {fi}\n"
+            f"📅 Fin: {ff}\n"
+            f"📆 Días laborables: *{dias}*{saldo_txt}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"¿Confirmas la solicitud? Responde *SÍ* o *NO*"
         )
@@ -1290,24 +1363,27 @@ def webhook():
     elif paso == 'vac_confirmar':
         if es_confirmacion(incoming_msg):
             datos_vac = get_estado(numero)['datos']
-            vac_id = guardar_vacacion(datos_vac, numero)
+            vac_id, dias = guardar_vacacion(datos_vac, numero)
             borrar_estado(numero)
             fi = datos_vac.get('fecha_inicio','')
             ff = datos_vac.get('fecha_fin','')
-            op_nombre = nombre_operario(numero)
+            op_nombre = datos_vac.get('nombre_operario', nombre_operario(numero))
             # Notificar a Alberto
-            enviar_whatsapp(
-                SUPERVISOR_WA,
-                f"🌴 *SOLICITUD DE VACACIONES #{vac_id}*\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"👷 {op_nombre}\n"
-                f"📅 Del {fi} al {ff}\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"Responde:\n"
-                f"✅ *APROBAR {vac_id}*\n"
-                f"❌ *RECHAZAR {vac_id}*"
-            )
-            msg.body(f"✅ Solicitud enviada. Pendiente de aprobación por Alberto.")
+            if vac_id:
+                enviar_whatsapp(
+                    SUPERVISOR_WA,
+                    f"🌴 *SOLICITUD DE VACACIONES #{vac_id}*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"👷 {op_nombre}\n"
+                    f"📅 Del {fi} al {ff}\n"
+                    f"📆 {dias} días laborables\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"✅ *APROBAR {vac_id}*\n"
+                    f"❌ *RECHAZAR {vac_id}*"
+                )
+                msg.body(f"✅ Solicitud #{vac_id} enviada. Pendiente de aprobación por Alberto.")
+            else:
+                msg.body("✅ Solicitud enviada. Pendiente de aprobación por Alberto.")
         elif es_cancelacion(incoming_msg):
             borrar_estado(numero)
             msg.body("❌ Solicitud cancelada. Escribe *vacaciones* para empezar de nuevo.")
@@ -1686,6 +1762,109 @@ def descargar_pdf_vehiculo(v_id):
     from flask import Response
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
+
+
+# ── Panel Vacaciones ──────────────────────────────────────────────────────────
+@app.route('/vacaciones')
+def panel_vacaciones():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT id, nombre_operario, operario, fecha_inicio, fecha_fin, dias_solicitados, fecha_solicitud, estado, created_at FROM vacaciones ORDER BY created_at DESC")
+        rows = cur.fetchall()
+        cur.execute("SELECT operario, nombre, dias_totales, dias_usados FROM saldo_vacaciones ORDER BY nombre")
+        saldos = cur.fetchall()
+        cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+
+    filas_vac = ''
+    for r in rows:
+        vid, nombre, op, fi, ff, dias, fsol, estado, cat = r
+        badge = {'aprobada':'badge-ok','rechazada':'badge-no','pendiente':'badge-pend'}.get(estado,'badge-pend')
+        filas_vac += f"<tr><td>{vid}</td><td>{nombre or op}</td><td>{fi}</td><td>{ff}</td><td>{dias or '-'}</td><td>{fsol}</td><td><span class='{badge}'>{estado.upper()}</span></td></tr>"
+    if not filas_vac:
+        filas_vac = "<tr><td colspan=7 class='empty'>Sin solicitudes</td></tr>"
+
+    filas_saldo = ''
+    for s in saldos:
+        op, nombre, tot, usados = s
+        restantes = tot - usados
+        color = 'color:#c62828' if restantes < 5 else 'color:#2e7d32'
+        filas_saldo += f"<tr><td>{nombre}</td><td>{tot}</td><td>{usados}</td><td style='{color};font-weight:700'>{restantes}</td><td><a href='/vacaciones/saldo/{op}/editar' style='color:#1a3a5c;font-size:12px'>✏️ Editar</a></td></tr>"
+    if not filas_saldo:
+        filas_saldo = "<tr><td colspan=5 class='empty'>Sin saldos configurados</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Vacaciones — Instapalma</title>
+    <style>{CSS_BASE}
+    .badge-ok{{background:#2e7d32;color:white;padding:3px 10px;border-radius:10px;font-size:11px}}
+    .badge-no{{background:#c62828;color:white;padding:3px 10px;border-radius:10px;font-size:11px}}
+    .badge-pend{{background:#e65100;color:white;padding:3px 10px;border-radius:10px;font-size:11px}}
+    </style></head><body>
+    <header><div><h1>🌴 Vacaciones</h1><p>Instapalma</p></div>
+    <a href='/vacaciones/saldo/nuevo' style='background:white;color:#1a3a5c;padding:8px 16px;border-radius:8px;font-weight:700;text-decoration:none;font-size:13px'>+ Añadir saldo</a>
+    </header>
+    <div class='wrap' style='padding-top:20px'>
+    <h3 style='color:#1a3a5c;margin-bottom:12px'>Saldo de Vacaciones por Operario</h3>
+    <table><thead><tr><th>Operario</th><th>Total días</th><th>Usados</th><th>Restantes</th><th></th></tr></thead>
+    <tbody>{filas_saldo}</tbody></table>
+    <h3 style='color:#1a3a5c;margin:24px 0 12px'>Solicitudes</h3>
+    <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th></tr></thead>
+    <tbody>{filas_vac}</tbody></table>
+    </div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    </body></html>"""
+
+@app.route('/vacaciones/saldo/nuevo', methods=['GET','POST'])
+@app.route('/vacaciones/saldo/<path:op>/editar', methods=['GET','POST'])
+def editar_saldo(op=None):
+    from flask import request as req
+    if req.method == 'POST':
+        nombre = req.form.get('nombre','')
+        operario = req.form.get('operario','')
+        dias_totales = int(req.form.get('dias_totales', 23))
+        dias_usados = int(req.form.get('dias_usados', 0))
+        try:
+            conn = get_db(); cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO saldo_vacaciones (operario, nombre, dias_totales, dias_usados, anio, updated_at)
+                VALUES (%s, %s, %s, %s, 2026, NOW())
+                ON CONFLICT (operario) DO UPDATE SET nombre=%s, dias_totales=%s, dias_usados=%s, updated_at=NOW()
+            """, (operario, nombre, dias_totales, dias_usados, nombre, dias_totales, dias_usados))
+            conn.commit(); cur.close(); conn.close()
+        except Exception as e:
+            return f"Error: {e}", 500
+        from flask import redirect
+        return redirect('/vacaciones')
+
+    # GET — cargar datos si es edición
+    datos = {'operario': op or '', 'nombre': '', 'dias_totales': 23, 'dias_usados': 0}
+    if op:
+        try:
+            conn = get_db(); cur = conn.cursor()
+            cur.execute("SELECT operario, nombre, dias_totales, dias_usados FROM saldo_vacaciones WHERE operario=%s", (op,))
+            r = cur.fetchone()
+            cur.close(); conn.close()
+            if r:
+                datos = {'operario': r[0], 'nombre': r[1], 'dias_totales': r[2], 'dias_usados': r[3]}
+        except: pass
+    titulo = 'Editar saldo' if op else 'Nuevo saldo'
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>{titulo} — Instapalma</title>
+    <style>{CSS_BASE} label{{display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#555}}
+    input{{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:16px;box-sizing:border-box}}
+    .btn{{background:#1a3a5c;color:white;padding:12px 28px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}}</style></head><body>
+    <header><div><h1>🌴 {titulo}</h1><p>Instapalma</p></div></header>
+    <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
+    <form method='POST'>
+    <label>Número operario (ej: 34636606175)</label><input name='operario' value='{datos["operario"]}' required>
+    <label>Nombre</label><input name='nombre' value='{datos["nombre"]}' required>
+    <label>Días totales 2026</label><input name='dias_totales' type='number' value='{datos["dias_totales"]}' required>
+    <label>Días ya usados</label><input name='dias_usados' type='number' value='{datos["dias_usados"]}' required>
+    <button class='btn' type='submit'>Guardar</button>
+    </form>
+    </div>
+    <div style='padding:0 30px'><a href='/vacaciones' class='back'>← Volver</a></div>
+    </body></html>"""
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
