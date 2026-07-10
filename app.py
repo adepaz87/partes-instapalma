@@ -1649,8 +1649,11 @@ def webhook():
                 for idx in seleccionados_idx:
                     r = retales_disp[idx]
                     lineas.append({
-                        'material': r['nombre'], 'cantidad': r['metros'],
-                        'unidad': r['unidad'], 'material_id': r['id']
+                        'material': r['nombre'],
+                        'cantidad': r['metros'],   # metros en el albarán (informativo)
+                        'unidad': r['unidad'],
+                        'material_id': r['id'],
+                        'delta_stock': -1          # un retal = 1 unidad de stock
                     })
                 set_dato(numero, 'stock_lineas', lineas)
                 set_paso(numero, 'stock_salida_material')
@@ -1700,7 +1703,9 @@ def webhook():
                 # Ajustar stock y registrar movimientos
                 alertas = []
                 for l in lineas:
-                    r = ajustar_stock(l['material_id'], -l['cantidad'])
+                    # Si es un retal, el delta de stock es -1 (sacar el retal entero); si no, -cantidad
+                    delta = l.get('delta_stock', -l['cantidad'])
+                    r = ajustar_stock(l['material_id'], delta)
                     registrar_movimiento('salida', l['material_id'], l['material'], l['cantidad'],
                         l['unidad'], numero, nombre_op, obra, aid)
                     if r and r[0] <= r[1] and r[1] > 0:
