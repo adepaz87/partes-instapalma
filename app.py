@@ -1565,8 +1565,11 @@ def webhook():
                     set_dato(numero, 'stock_retales_candidatos', [list(c) for c in candidatos])
                     set_dato(numero, 'stock_mat_busqueda', incoming_msg)
                     set_paso(numero, 'stock_salida_retales_metros')
-                    total_m = sum(float(c[3]) for c in candidatos if c[3] > 0)
-                    lista_r = '\n'.join([f"  • {c[1]} — {c[3]} {c[2]}" for c in candidatos if c[3] > 0])
+                    # Calcular total real extrayendo metros del nombre
+                    sugerencia_previa = sugerir_retales(candidatos, 9999)
+                    retales_info = sugerencia_previa['retales']
+                    total_m = sugerencia_previa['total_disponible']
+                    lista_r = '\n'.join([f"  • {r['nombre']} — {r['metros']} m" for r in retales_info])
                     msg.body(
                         f"📏 *Retales disponibles de {incoming_msg}:*\n{lista_r}\n"
                         f"Total: *{total_m} m*\n\n"
