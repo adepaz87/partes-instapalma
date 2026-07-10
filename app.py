@@ -660,6 +660,9 @@ def finalizar_parte(numero, datos):
 MENSAJES_VEHICULO   = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
 MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
 MENSAJES_RESUMEN_MES = ['resumen mes', 'resumen del mes', 'resumen mensual', 'cierre mes', 'cierre del mes', 'resumen fin de mes', 'fin de mes']
+MENSAJES_STOCK_SALIDA   = ['salida almacen', 'salida de almacen', 'sacar material', 'retirar material', 'salida stock']
+MENSAJES_STOCK_DEVOL    = ['devolucion almacen', 'devolución almacén', 'devolver material', 'devolucion stock', 'devolver a almacen', 'devolucion a almacen']
+MENSAJES_STOCK_CONSULTA = ['consultar stock', 'ver stock', 'cuanto hay de', 'cuánto hay de', 'hay en almacen', 'stock almacen', 'almacen stock']
 
 def iniciar_vacaciones(numero):
     try:
@@ -1106,6 +1109,56 @@ def webhook():
         )
         return str(resp) if not use_meta else ('OK', 200)
 
+    # ── Almacén: Salida ───────────────────────────────────────────────────────
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_STOCK_SALIDA):
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_conocido = OPERARIOS.get(num_limpio, '')
+        if nombre_conocido:
+            set_dato(numero, 'nombre_operario', nombre_conocido)
+        set_dato(numero, 'stock_lineas', [])
+        set_paso(numero, 'stock_salida_obra')
+        msg.body(
+            "📤 *SALIDA DE ALMACÉN*\n\n"
+            "¿Para qué *obra o cliente* es esta salida?\n"
+            "_Ejemplo: Ayuntamiento Los Llanos — Calle Real_"
+        )
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Almacén: Devolución ───────────────────────────────────────────────────
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_STOCK_DEVOL):
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_conocido = OPERARIOS.get(num_limpio, '')
+        if nombre_conocido:
+            set_dato(numero, 'nombre_operario', nombre_conocido)
+        set_dato(numero, 'stock_lineas', [])
+        set_paso(numero, 'stock_devol_material')
+        msg.body(
+            "📥 *DEVOLUCIÓN A ALMACÉN*\n\n"
+            "¿Qué material devuelves?\n"
+            "_Escribe el nombre del material_"
+        )
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Almacén: Consulta de stock ────────────────────────────────────────────
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_STOCK_CONSULTA):
+        # Intentar extraer el material de la misma frase
+        msg_norm = normalizar(incoming_msg)
+        busqueda = msg_norm
+        for p in MENSAJES_STOCK_CONSULTA:
+            busqueda = busqueda.replace(p, '').strip()
+        if busqueda:
+            mat, err = buscar_material_msg(busqueda)
+            if err:
+                msg.body(err)
+            else:
+                stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
+                alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
+                msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{alerta}")
+        else:
+            set_paso(numero, 'stock_consulta')
+            msg.body("🔍 ¿Qué material quieres consultar?\n_Escribe el nombre o parte de él_")
+        return str(resp) if not use_meta else ('OK', 200)
+
     # Detectar resumen fin de mes
     if any(p in normalizar(incoming_msg) for p in MENSAJES_RESUMEN_MES):
         num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
@@ -1474,6 +1527,194 @@ def webhook():
             msg.body("❌ Cancelado. Escribe *resumen mes* para empezar de nuevo.")
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
+
+    # ── Flujo Almacén: Salida ─────────────────────────────────────────────────
+    elif paso == 'stock_salida_obra':
+        set_dato(numero, 'stock_obra', incoming_msg)
+        set_paso(numero, 'stock_salida_material')
+        msg.body(
+            "📦 ¿Qué *material* retiras?\n"
+            "_Escribe el nombre del material_"
+        )
+
+    elif paso == 'stock_salida_material':
+        if normalizar(incoming_msg) in ['listo', 'fin', 'terminar', 'acabar', 'ya', 'eso es todo']:
+            # Pasar a confirmación
+            datos_s = get_estado(numero)['datos']
+            lineas = datos_s.get('stock_lineas', [])
+            if not lineas:
+                msg.body("No has añadido ningún material. Dime qué material retiras.")
+            else:
+                set_paso(numero, 'stock_salida_confirmar')
+                resumen = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                msg.body(
+                    f"📤 *RESUMEN SALIDA*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🏢 Obra: {datos_s.get('stock_obra','')}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{resumen}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"¿Es correcto? Responde *SÍ* o *NO*"
+                )
+        else:
+            mat, err = buscar_material_msg(incoming_msg)
+            if err:
+                msg.body(err)
+            else:
+                set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2], 'stock': float(mat[3])})
+                set_paso(numero, 'stock_salida_cantidad')
+                msg.body(
+                    f"📦 *{mat[1]}*\n"
+                    f"Stock disponible: *{mat[3]} {mat[2]}*\n\n"
+                    f"¿Qué *cantidad* retiras?"
+                )
+
+    elif paso == 'stock_salida_cantidad':
+        try:
+            cantidad = float(incoming_msg.replace(',','.'))
+            datos_s = get_estado(numero)['datos']
+            mat_tmp = datos_s.get('stock_mat_tmp', {})
+            if cantidad <= 0:
+                msg.body("La cantidad debe ser mayor que 0.")
+            elif cantidad > mat_tmp.get('stock', 0):
+                msg.body(f"⚠️ Solo hay *{mat_tmp.get('stock',0)} {mat_tmp.get('unidad','')}* disponibles. Indica una cantidad menor.")
+            else:
+                lineas = datos_s.get('stock_lineas', [])
+                lineas.append({'material': mat_tmp['nombre'], 'cantidad': cantidad, 'unidad': mat_tmp['unidad'], 'material_id': mat_tmp['id']})
+                set_dato(numero, 'stock_lineas', lineas)
+                set_paso(numero, 'stock_salida_material')
+                msg.body(
+                    f"✅ Añadido: *{mat_tmp['nombre']}* — {cantidad} {mat_tmp['unidad']}\n\n"
+                    f"¿Otro material? Escribe el nombre o di *listo* para terminar."
+                )
+        except:
+            msg.body("Escribe solo el número de la cantidad. Ejemplo: *25* o *0.5*")
+
+    elif paso == 'stock_salida_confirmar':
+        if es_confirmacion(incoming_msg):
+            datos_s = get_estado(numero)['datos']
+            lineas = datos_s.get('stock_lineas', [])
+            obra = datos_s.get('stock_obra', '')
+            nombre_op = datos_s.get('nombre_operario', nombre_operario(numero))
+            borrar_estado(numero)
+            import threading as _th
+            def _procesar_salida():
+                numero_alb = siguiente_numero_albaran()
+                from datetime import datetime as dt
+                fecha_str = dt.now().strftime('%d/%m/%Y %H:%M')
+                # Crear albarán en DB
+                aid = crear_albaran(numero_alb, numero, nombre_op, obra, lineas)
+                # Ajustar stock y registrar movimientos
+                alertas = []
+                for l in lineas:
+                    r = ajustar_stock(l['material_id'], -l['cantidad'])
+                    registrar_movimiento('salida', l['material_id'], l['material'], l['cantidad'],
+                        l['unidad'], numero, nombre_op, obra, aid)
+                    if r and r[0] <= r[1] and r[1] > 0:
+                        alertas.append(f"⚠️ {r[2]}: quedan {r[0]} {r[3]} (mínimo {r[1]})")
+                # Generar PDF
+                pdf_bytes = generar_pdf_albaran({
+                    'numero': numero_alb, 'nombre_operario': nombre_op,
+                    'obra': obra, 'lineas': lineas, 'fecha': fecha_str
+                })
+                pdf_url = subir_pdf_albaran(pdf_bytes, numero_alb)
+                # Enviar al operario
+                op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
+                resumen_txt = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                texto = (
+                    f"✅ *Albarán {numero_alb}*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🏢 {obra}\n{resumen_txt}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━"
+                )
+                enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
+                # Enviar al supervisor
+                enviar_whatsapp(SUPERVISOR_WA, f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}", media_url=pdf_url if pdf_url else None)
+                # Alertas de stock bajo
+                for a in alertas:
+                    enviar_whatsapp(SUPERVISOR_WA, a)
+            _th.Thread(target=_procesar_salida, daemon=True).start()
+            msg.body(f"✅ Salida registrada. Te envío el albarán en un momento.")
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body("❌ Cancelado.")
+        else:
+            msg.body("Responde *SÍ* para confirmar o *NO* para cancelar.")
+
+    # ── Flujo Almacén: Devolución ─────────────────────────────────────────────
+    elif paso == 'stock_devol_material':
+        if normalizar(incoming_msg) in ['listo', 'fin', 'terminar', 'acabar', 'ya', 'eso es todo']:
+            datos_d = get_estado(numero)['datos']
+            lineas = datos_d.get('stock_lineas', [])
+            if not lineas:
+                msg.body("No has añadido ningún material. Dime qué devuelves.")
+            else:
+                set_paso(numero, 'stock_devol_confirmar')
+                resumen = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                msg.body(
+                    f"📥 *RESUMEN DEVOLUCIÓN*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"{resumen}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"¿Es correcto? Responde *SÍ* o *NO*"
+                )
+        else:
+            mat, err = buscar_material_msg(incoming_msg)
+            if err:
+                msg.body(err)
+            else:
+                set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2]})
+                set_paso(numero, 'stock_devol_cantidad')
+                msg.body(f"📥 *{mat[1]}*\n¿Qué *cantidad* devuelves?")
+
+    elif paso == 'stock_devol_cantidad':
+        try:
+            cantidad = float(incoming_msg.replace(',','.'))
+            if cantidad <= 0:
+                msg.body("La cantidad debe ser mayor que 0.")
+            else:
+                datos_d = get_estado(numero)['datos']
+                mat_tmp = datos_d.get('stock_mat_tmp', {})
+                lineas = datos_d.get('stock_lineas', [])
+                lineas.append({'material': mat_tmp['nombre'], 'cantidad': cantidad, 'unidad': mat_tmp['unidad'], 'material_id': mat_tmp['id']})
+                set_dato(numero, 'stock_lineas', lineas)
+                set_paso(numero, 'stock_devol_material')
+                msg.body(
+                    f"✅ Añadido: *{mat_tmp['nombre']}* — {cantidad} {mat_tmp['unidad']}\n\n"
+                    f"¿Otro material? Escribe el nombre o di *listo* para terminar."
+                )
+        except:
+            msg.body("Escribe solo el número. Ejemplo: *10* o *2.5*")
+
+    elif paso == 'stock_devol_confirmar':
+        if es_confirmacion(incoming_msg):
+            datos_d = get_estado(numero)['datos']
+            lineas = datos_d.get('stock_lineas', [])
+            nombre_op = datos_d.get('nombre_operario', nombre_operario(numero))
+            borrar_estado(numero)
+            for l in lineas:
+                ajustar_stock(l['material_id'], l['cantidad'])
+                registrar_movimiento('devolucion', l['material_id'], l['material'], l['cantidad'],
+                    l['unidad'], numero, nombre_op)
+            resumen = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+            enviar_whatsapp(SUPERVISOR_WA, f"📥 *Devolución almacén*\n👷 {nombre_op}\n{resumen}")
+            msg.body(f"✅ Devolución registrada. Stock actualizado.\n\n{resumen}")
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body("❌ Cancelado.")
+        else:
+            msg.body("Responde *SÍ* para confirmar o *NO* para cancelar.")
+
+    # ── Flujo Almacén: Consulta ───────────────────────────────────────────────
+    elif paso == 'stock_consulta':
+        mat, err = buscar_material_msg(incoming_msg)
+        borrar_estado(numero)
+        if err:
+            msg.body(err)
+        else:
+            stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
+            alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
+            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{alerta}")
 
     # ── Flujo vacaciones ──────────────────────────────────────────────────────
     elif paso == 'vac_nombre':
@@ -2304,6 +2545,524 @@ def pdf_resumen(rid):
     from flask import Response
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre_fichero}"'})
+
+
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{nombre_fichero}"'})
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GESTIÓN DE STOCK DE ALMACÉN
+# ══════════════════════════════════════════════════════════════════════════════
+
+MENSAJES_STOCK_SALIDA    = ['salida almacen', 'salida de almacen', 'sacar material', 'retirar material', 'salida stock']
+MENSAJES_STOCK_DEVOL     = ['devolucion almacen', 'devolución almacén', 'devolver material', 'devolucion stock', 'devolver a almacen']
+MENSAJES_STOCK_CONSULTA  = ['stock', 'consultar stock', 'ver stock', 'cuanto hay de', 'cuánto hay de', 'hay en almacen', 'almacen']
+
+# ── DB ────────────────────────────────────────────────────────────────────────
+
+def init_stock_db():
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS stock_materiales (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(200) UNIQUE,
+                unidad VARCHAR(30) DEFAULT 'ud',
+                stock_actual NUMERIC(12,3) DEFAULT 0,
+                stock_minimo NUMERIC(12,3) DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS stock_movimientos (
+                id SERIAL PRIMARY KEY,
+                tipo VARCHAR(20),
+                material_id INTEGER REFERENCES stock_materiales(id),
+                material_nombre VARCHAR(200),
+                cantidad NUMERIC(12,3),
+                unidad VARCHAR(30),
+                operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
+                obra VARCHAR(200),
+                albaran_id INTEGER,
+                notas TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS stock_albaranes (
+                id SERIAL PRIMARY KEY,
+                numero VARCHAR(30) UNIQUE,
+                operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
+                obra VARCHAR(200),
+                lineas JSONB,
+                pdf_url TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit(); cur.close(); conn.close()
+        print("Stock DB OK")
+    except Exception as e:
+        print(f"Error init_stock_db: {e}")
+        if conn:
+            try: conn.rollback()
+            except: pass
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+init_stock_db()
+
+def get_material_by_nombre(nombre):
+    """Busca material por nombre exacto o aproximado. Devuelve (id, nombre, unidad, stock_actual, stock_minimo)."""
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        # Exacto
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE LOWER(nombre)=LOWER(%s)", (nombre,))
+        r = cur.fetchone()
+        if r:
+            return r
+        # Aproximado (ILIKE)
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE LOWER(nombre) LIKE LOWER(%s) ORDER BY nombre LIMIT 5", (f'%{nombre}%',))
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return rows  # lista de candidatos si no hay exacto
+    except Exception as e:
+        print(f"Error get_material: {e}")
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+def ajustar_stock(material_id, delta):
+    """Suma delta al stock (delta negativo = salida)."""
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            UPDATE stock_materiales SET stock_actual = stock_actual + %s, updated_at=NOW()
+            WHERE id=%s RETURNING stock_actual, stock_minimo, nombre, unidad
+        """, (delta, material_id))
+        r = cur.fetchone()
+        conn.commit(); cur.close(); conn.close()
+        return r  # (stock_actual, stock_minimo, nombre, unidad)
+    except Exception as e:
+        print(f"Error ajustar_stock: {e}")
+        if conn: conn.rollback()
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+def registrar_movimiento(tipo, material_id, material_nombre, cantidad, unidad, operario, nombre_op, obra='', albaran_id=None, notas=''):
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO stock_movimientos (tipo, material_id, material_nombre, cantidad, unidad, operario, nombre_operario, obra, albaran_id, notas)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (tipo, material_id, material_nombre, cantidad, unidad, operario, nombre_op, obra, albaran_id, notas))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error registrar_movimiento: {e}")
+        if conn: conn.rollback()
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+def crear_albaran(numero, operario, nombre_op, obra, lineas):
+    """Crea albarán y devuelve su id."""
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO stock_albaranes (numero, operario, nombre_operario, obra, lineas)
+            VALUES (%s,%s,%s,%s,%s) RETURNING id
+        """, (numero, operario, nombre_op, obra, json.dumps(lineas)))
+        aid = cur.fetchone()[0]
+        conn.commit(); cur.close(); conn.close()
+        return aid
+    except Exception as e:
+        print(f"Error crear_albaran: {e}")
+        if conn: conn.rollback()
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+def siguiente_numero_albaran():
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM stock_albaranes")
+        n = cur.fetchone()[0] + 1
+        cur.close(); conn.close()
+        from datetime import datetime as dt
+        return f"ALB-{dt.now().strftime('%Y%m')}-{n:04d}"
+    except:
+        from datetime import datetime as dt
+        return f"ALB-{dt.now().strftime('%Y%m%d%H%M%S')}"
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+# ── PDF albarán interno ───────────────────────────────────────────────────────
+
+def generar_pdf_albaran(albaran):
+    """albaran: dict con numero, nombre_operario, obra, lineas, fecha."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+    AZUL = colors.HexColor('#1a3a5c')
+    GRIS = colors.HexColor('#f5f5f5')
+
+    titulo_style = ParagraphStyle('t', fontSize=20, textColor=AZUL,
+        alignment=TA_CENTER, fontName='Helvetica-Bold')
+    pie_style = ParagraphStyle('p', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+
+    import os as _os
+    LOGO_PATH = _os.path.join(_os.path.dirname(__file__), 'logo.jpg')
+    if _os.path.exists(LOGO_PATH):
+        _lw = 4*cm; _lh = _lw / (1024/219)
+        logo = RLImage(LOGO_PATH, width=_lw, height=_lh)
+    else:
+        logo = Paragraph("INSTAPALMA", titulo_style)
+
+    cab_style = ParagraphStyle('c', fontName='Helvetica-Bold', fontSize=16,
+        textColor=AZUL, alignment=1, leading=20)
+    cab = Table([[logo, Paragraph('ALBARÁN INTERNO DE ALMACÉN', cab_style)]], colWidths=[5*cm, 12*cm])
+    cab.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
+    elements.append(cab)
+    elements.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=8))
+    elements.append(Spacer(1, 0.2*cm))
+
+    from datetime import datetime as dt
+    fecha_str = albaran.get('fecha', dt.now().strftime('%d/%m/%Y %H:%M'))
+    t_cab = Table([
+        ['Nº Albarán', albaran.get('numero','')],
+        ['Fecha', fecha_str],
+        ['Operario', albaran.get('nombre_operario','')],
+        ['Obra / Cliente', albaran.get('obra','')],
+    ], colWidths=[4*cm, 13*cm])
+    t_cab.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(0,-1),AZUL),
+        ('TEXTCOLOR',(0,0),(0,-1),colors.white),
+        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),10),
+        ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
+        ('PADDING',(0,0),(-1,-1),7),
+        ('ROWBACKGROUNDS',(1,0),(1,-1),[colors.white, GRIS]),
+    ]))
+    elements.append(t_cab)
+    elements.append(Spacer(1, 0.5*cm))
+
+    # Líneas de material
+    sec_style = ParagraphStyle('s', fontSize=9, textColor=colors.white,
+        backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=0, spaceBefore=4, borderPad=4)
+    elements.append(Paragraph('MATERIALES RETIRADOS', sec_style))
+    elements.append(Spacer(1, 0.1*cm))
+
+    lineas = albaran.get('lineas', [])
+    filas = [['Material', 'Cantidad', 'Unidad']]
+    for l in lineas:
+        filas.append([l.get('material',''), str(l.get('cantidad','')), l.get('unidad','')])
+
+    t_lin = Table(filas, colWidths=[10*cm, 3.5*cm, 3.5*cm])
+    t_lin.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),AZUL),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),10),
+        ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
+        ('PADDING',(0,0),(-1,-1),8),
+        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, GRIS]),
+        ('ALIGN',(1,0),(-1,-1),'CENTER'),
+    ]))
+    elements.append(t_lin)
+    elements.append(Spacer(1, 1*cm))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+    elements.append(Paragraph(f"Generado el {fecha_str} — Instapalma · Almacén", pie_style))
+    doc.build(elements)
+    return buffer.getvalue()
+
+def subir_pdf_albaran(pdf_bytes, numero):
+    try:
+        import cloudinary, cloudinary.uploader, base64 as _b64
+        cloudinary.config(
+            cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME',''),
+            api_key=os.environ.get('CLOUDINARY_API_KEY',''),
+            api_secret=os.environ.get('CLOUDINARY_API_SECRET','')
+        )
+        b64 = _b64.b64encode(pdf_bytes).decode()
+        result = cloudinary.uploader.upload(
+            f"data:application/pdf;base64,{b64}",
+            public_id=f"albaran_{numero.replace('-','_')}",
+            resource_type='raw', folder='instapalma_albaranes'
+        )
+        return result.get('secure_url','')
+    except Exception as e:
+        print(f"Error subir PDF albarán: {e}")
+        return ''
+
+# ── Flujo conversacional stock ────────────────────────────────────────────────
+# Pasos salida: stock_salida_obra → stock_salida_material → stock_salida_cantidad → (loop) → stock_salida_confirmar
+# Pasos devol:  stock_devol_material → stock_devol_cantidad → (loop) → stock_devol_confirmar
+# Consulta:     directa, sin pasos
+
+def buscar_material_msg(texto):
+    """Devuelve (material_row, mensaje_error_o_None)."""
+    r = get_material_by_nombre(texto)
+    if r is None:
+        return None, "❌ Error al consultar el almacén. Intenta de nuevo."
+    if isinstance(r, tuple):
+        return r, None  # exacto
+    if len(r) == 0:
+        return None, f"❌ No encontré *{texto}* en el catálogo. Escribe el nombre exacto o parte de él."
+    if len(r) == 1:
+        return r[0], None  # único resultado aproximado
+    # Varios candidatos
+    lista = '\n'.join([f"• {x[1]} ({x[3]} {x[2]})" for x in r])
+    return None, f"🔍 Encontré varios materiales:\n{lista}\n\nEscribe el nombre más completo."
+
+
+
+# ── Panel web Almacén ─────────────────────────────────────────────────────────
+
+@app.route('/almacen')
+def panel_almacen():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, updated_at FROM stock_materiales ORDER BY nombre")
+        materiales = cur.fetchall()
+        cur.execute("SELECT tipo, material_nombre, cantidad, unidad, nombre_operario, obra, created_at FROM stock_movimientos ORDER BY created_at DESC LIMIT 100")
+        movimientos = cur.fetchall()
+        cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+
+    filas_mat = ''
+    for m in materiales:
+        mid, nombre, unidad, stock, minimo, upd = m
+        alerta = ' style="background:#fff3e0"' if minimo > 0 and stock <= minimo else ''
+        badge = f'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">⚠️ Bajo mínimo</span>' if minimo > 0 and stock <= minimo else ''
+        filas_mat += (
+            f"<tr{alerta}>"
+            f"<td>{nombre}</td><td style='text-align:center'>{stock}</td>"
+            f"<td style='text-align:center'>{unidad}</td>"
+            f"<td style='text-align:center'>{minimo}</td>"
+            f"<td>{badge}</td>"
+            f"<td><a href='/almacen/material/{mid}/editar' style='color:#1a3a5c;font-size:12px'>✏️</a></td>"
+            f"</tr>"
+        )
+    if not filas_mat:
+        filas_mat = "<tr><td colspan=6 class='empty'>Sin materiales — sube tu Excel para cargar el catálogo</td></tr>"
+
+    filas_mov = ''
+    iconos = {'salida': '📤', 'devolucion': '📥', 'entrada': '➕'}
+    for mv in movimientos:
+        tipo, mat, cant, unidad, op, obra, fecha = mv
+        icono = iconos.get(tipo, '•')
+        filas_mov += (
+            f"<tr><td>{icono} {tipo.upper()}</td><td>{mat}</td>"
+            f"<td style='text-align:center'>{cant} {unidad}</td>"
+            f"<td>{op or ''}</td><td>{obra or ''}</td><td>{str(fecha)[:16]}</td></tr>"
+        )
+    if not filas_mov:
+        filas_mov = "<tr><td colspan=6 class='empty'>Sin movimientos</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
+    <title>Almacén — Instapalma</title>
+    <style>{CSS_BASE}
+    .upload-box{{background:white;border:2px dashed #1a3a5c;border-radius:10px;padding:24px;margin:0 0 20px;text-align:center}}
+    .upload-box input[type=file]{{margin:10px 0}}
+    .btn-up{{background:#1a3a5c;color:white;padding:10px 24px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}}
+    </style></head><body>
+    <header>
+      <div><h1>📦 Almacén</h1><p>Instapalma</p></div>
+      <a href='/almacen/material/nuevo' style='background:white;color:#1a3a5c;padding:8px 16px;border-radius:8px;font-weight:700;text-decoration:none;font-size:13px'>+ Añadir material</a>
+    </header>
+    <div class='wrap' style='padding-top:20px'>
+
+    <div class='upload-box'>
+      <b style='color:#1a3a5c'>📂 Carga masiva desde Excel</b><br>
+      <small>Columnas requeridas: <b>nombre</b>, <b>unidad</b>, <b>stock_actual</b>, <b>stock_minimo</b></small><br>
+      <form method='POST' action='/almacen/importar' enctype='multipart/form-data'>
+        <input type='file' name='archivo' accept='.xlsx,.xls,.csv' required>
+        <button class='btn-up' type='submit'>⬆ Importar</button>
+      </form>
+    </div>
+
+    <h3 style='color:#1a3a5c;margin-bottom:12px'>Stock de Materiales</h3>
+    <table><thead><tr><th>Material</th><th>Stock</th><th>Unidad</th><th>Mínimo</th><th>Estado</th><th></th></tr></thead>
+    <tbody>{filas_mat}</tbody></table>
+
+    <h3 style='color:#1a3a5c;margin:24px 0 12px'>Últimos Movimientos</h3>
+    <table><thead><tr><th>Tipo</th><th>Material</th><th>Cantidad</th><th>Operario</th><th>Obra</th><th>Fecha</th></tr></thead>
+    <tbody>{filas_mov}</tbody></table>
+
+    <div style='margin-top:16px'><a href='/almacen/albaranes' style='color:#1a3a5c;font-weight:700'>📋 Ver albaranes →</a></div>
+    </div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes de Trabajo</a></div>
+    </body></html>"""
+
+
+@app.route('/almacen/material/nuevo', methods=['GET','POST'])
+@app.route('/almacen/material/<int:mid>/editar', methods=['GET','POST'])
+def editar_material(mid=None):
+    from flask import request as req
+    if req.method == 'POST':
+        nombre = req.form.get('nombre','').strip()
+        unidad = req.form.get('unidad','ud').strip()
+        stock  = float(req.form.get('stock_actual', 0) or 0)
+        minimo = float(req.form.get('stock_minimo', 0) or 0)
+        try:
+            conn = get_db(); cur = conn.cursor()
+            if mid:
+                cur.execute("UPDATE stock_materiales SET nombre=%s, unidad=%s, stock_actual=%s, stock_minimo=%s, updated_at=NOW() WHERE id=%s",
+                    (nombre, unidad, stock, minimo, mid))
+            else:
+                cur.execute("INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo) VALUES (%s,%s,%s,%s) ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, updated_at=NOW()",
+                    (nombre, unidad, stock, minimo, unidad, stock, minimo))
+            conn.commit(); cur.close(); conn.close()
+        except Exception as e:
+            return f"Error: {e}", 500
+        from flask import redirect
+        return redirect('/almacen')
+
+    datos = {'nombre':'','unidad':'ud','stock_actual':0,'stock_minimo':0}
+    if mid:
+        try:
+            conn = get_db(); cur = conn.cursor()
+            cur.execute("SELECT nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE id=%s", (mid,))
+            r = cur.fetchone(); cur.close(); conn.close()
+            if r: datos = {'nombre':r[0],'unidad':r[1],'stock_actual':r[2],'stock_minimo':r[3]}
+        except: pass
+    titulo = 'Editar material' if mid else 'Nuevo material'
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>{titulo}</title>
+    <style>{CSS_BASE} label{{display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#555}}
+    input{{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:16px;box-sizing:border-box}}
+    .btn{{background:#1a3a5c;color:white;padding:12px 28px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}}</style></head><body>
+    <header><div><h1>📦 {titulo}</h1><p>Instapalma</p></div></header>
+    <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
+    <form method='POST'>
+    <label>Nombre del material</label><input name='nombre' value='{datos["nombre"]}' required>
+    <label>Unidad (ud, m, ml, kg, rollo...)</label><input name='unidad' value='{datos["unidad"]}' required>
+    <label>Stock actual</label><input name='stock_actual' type='number' step='0.001' value='{datos["stock_actual"]}' required>
+    <label>Stock mínimo (alerta)</label><input name='stock_minimo' type='number' step='0.001' value='{datos["stock_minimo"]}'>
+    <button class='btn' type='submit'>Guardar</button>
+    </form></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Volver</a></div>
+    </body></html>"""
+
+
+@app.route('/almacen/importar', methods=['POST'])
+def importar_excel():
+    from flask import request as req
+    archivo = req.files.get('archivo')
+    if not archivo:
+        return "No se recibió archivo", 400
+    try:
+        import openpyxl, io as _io, csv
+        content = archivo.read()
+        nombre_arch = archivo.filename.lower()
+        filas = []
+        if nombre_arch.endswith('.csv'):
+            reader = csv.DictReader(_io.StringIO(content.decode('utf-8-sig')))
+            for row in reader:
+                filas.append(row)
+        else:
+            wb = openpyxl.load_workbook(_io.BytesIO(content))
+            ws = wb.active
+            headers = [str(c.value).strip().lower() if c.value else '' for c in ws[1]]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                filas.append(dict(zip(headers, row)))
+
+        conn = get_db(); cur = conn.cursor()
+        importados = 0
+        for f in filas:
+            nombre = str(f.get('nombre',f.get('material',''))).strip()
+            if not nombre or nombre.lower() in ['none','nan','']: continue
+            unidad = str(f.get('unidad','ud')).strip() or 'ud'
+            try: stock = float(str(f.get('stock_actual', f.get('stock',0))).replace(',','.'))
+            except: stock = 0
+            try: minimo = float(str(f.get('stock_minimo', f.get('minimo',0))).replace(',','.'))
+            except: minimo = 0
+            cur.execute("""
+                INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo)
+                VALUES (%s,%s,%s,%s)
+                ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, updated_at=NOW()
+            """, (nombre, unidad, stock, minimo, unidad, stock, minimo))
+            importados += 1
+        conn.commit(); cur.close(); conn.close()
+        from flask import redirect
+        return redirect(f'/almacen?importados={importados}')
+    except Exception as e:
+        return f"Error importando: {e}", 500
+
+
+@app.route('/almacen/albaranes')
+def panel_albaranes():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT id, numero, nombre_operario, obra, created_at FROM stock_albaranes ORDER BY created_at DESC LIMIT 200")
+        rows = cur.fetchall(); cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+
+    filas = ''
+    for r in rows:
+        aid, num, op, obra, fecha = r
+        filas += (
+            f"<tr><td>{num}</td><td>{op or ''}</td><td>{obra or ''}</td>"
+            f"<td>{str(fecha)[:16]}</td>"
+            f"<td><a href='/almacen/albaranes/{aid}/pdf' style='color:#1a3a5c;font-size:12px'>⬇ PDF</a></td></tr>"
+        )
+    if not filas:
+        filas = "<tr><td colspan=5 class='empty'>Sin albaranes</td></tr>"
+
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Albaranes — Instapalma</title>
+    <style>{CSS_BASE}</style></head><body>
+    <header><div><h1>📋 Albaranes de Almacén</h1><p>Instapalma</p></div></header>
+    <div class='wrap' style='padding-top:20px'>
+    <table><thead><tr><th>Nº Albarán</th><th>Operario</th><th>Obra</th><th>Fecha</th><th>PDF</th></tr></thead>
+    <tbody>{filas}</tbody></table>
+    </div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a></div>
+    </body></html>"""
+
+
+@app.route('/almacen/albaranes/<int:aid>/pdf')
+def pdf_albaran(aid):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT numero, nombre_operario, obra, lineas, created_at FROM stock_albaranes WHERE id=%s", (aid,))
+        r = cur.fetchone(); cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+    if not r:
+        return "No encontrado", 404
+    import json as _json
+    lineas = r[3] if isinstance(r[3], list) else _json.loads(r[3] or '[]')
+    from datetime import datetime as dt
+    fecha_str = str(r[4])[:16] if r[4] else dt.now().strftime('%d/%m/%Y %H:%M')
+    pdf_bytes = generar_pdf_albaran({'numero': r[0], 'nombre_operario': r[1], 'obra': r[2], 'lineas': lineas, 'fecha': fecha_str})
+    nombre_f = f"{r[0]}-{(r[2] or 'OBRA').replace(' ','_')[:30].upper()}.pdf"
+    from flask import Response
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{nombre_f}"'})
 
 
 if __name__ == '__main__':
