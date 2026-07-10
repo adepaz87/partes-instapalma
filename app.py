@@ -219,12 +219,18 @@ def set_paso(numero, paso):
 
 def set_dato(numero, clave, valor):
     try:
+        import json as _json
+        # Serializar listas/dicts a JSON para almacenamiento correcto en jsonb
+        if isinstance(valor, (list, dict)):
+            valor_json = _json.dumps(valor, ensure_ascii=False)
+        else:
+            valor_json = valor
         conn = get_db(); cur = conn.cursor()
         cur.execute("""
             UPDATE conversaciones_db
-            SET datos = datos || jsonb_build_object(%s, %s::text), updated_at=NOW()
+            SET datos = datos || jsonb_build_object(%s, %s::text::jsonb), updated_at=NOW()
             WHERE numero=%s
-        """, (clave, valor, numero))
+        """, (clave, valor_json, numero))
         conn.commit(); cur.close(); conn.close()
     except Exception as e:
         print(f"Error set_dato: {e}")
