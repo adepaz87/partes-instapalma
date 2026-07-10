@@ -1584,6 +1584,7 @@ def webhook():
                         f"¿Cuántos metros necesitas?"
                     )
                 else:
+                    set_paso(numero, 'stock_salida_material')
                     msg.body(err)
             else:
                 set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2], 'stock': float(mat[3])})
@@ -2770,19 +2771,39 @@ init_stock_db()
 
 def get_material_by_nombre(nombre):
     """Busca material por nombre exacto o aproximado. Devuelve (id, nombre, unidad, stock_actual, stock_minimo)."""
+    import unicodedata as _ud
+    def _norm(t):
+        # Quitar tildes y pasar a minúsculas para comparación tolerante
+        return ''.join(c for c in _ud.normalize('NFD', t.lower()) if _ud.category(c) != 'Mn')
+
     conn = None
     try:
         conn = get_db(); cur = conn.cursor()
-        # Exacto
+        # Exacto (sin tildes)
         cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE LOWER(nombre)=LOWER(%s)", (nombre,))
         r = cur.fetchone()
         if r:
             return r
-        # Aproximado (ILIKE)
-        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE LOWER(nombre) LIKE LOWER(%s) ORDER BY nombre LIMIT 5", (f'%{nombre}%',))
-        rows = cur.fetchall()
+        # Aproximado con ILIKE sobre cada palabra del texto buscado (tolerante a tildes)
+        palabras = [p for p in _norm(nombre).split() if len(p) > 1]
+        # Buscar todos y filtrar en Python para tolerancia de tildes
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales ORDER BY nombre")
+        todos = cur.fetchall()
         cur.close(); conn.close()
-        return rows  # lista de candidatos si no hay exacto
+        resultados = []
+        for row in todos:
+            nombre_norm = _norm(row[1])
+            if all(p in nombre_norm for p in palabras):
+                resultados.append(row)
+        if resultados:
+            return resultados[:5]
+        # Fallback: cualquier palabra coincide (búsqueda laxa)
+        resultados_laxa = []
+        for row in todos:
+            nombre_norm = _norm(row[1])
+            if any(p in nombre_norm for p in palabras if len(p) > 2):
+                resultados_laxa.append(row)
+        return resultados_laxa[:5]
     except Exception as e:
         print(f"Error get_material: {e}")
         return None
