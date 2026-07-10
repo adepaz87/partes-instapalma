@@ -1562,7 +1562,9 @@ def webhook():
                 if isinstance(err, tuple) and err[0] == 'RETALES':
                     # Es un grupo de retales — preguntar metros necesarios
                     candidatos = err[1]
-                    set_dato(numero, 'stock_retales_candidatos', [list(c) for c in candidatos])
+                    # Convertir Decimals a float para serialización JSON
+                    candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4])] for c in candidatos]
+                    set_dato(numero, 'stock_retales_candidatos', candidatos_serial)
                     set_dato(numero, 'stock_mat_busqueda', incoming_msg)
                     set_paso(numero, 'stock_salida_retales_metros')
                     # Calcular total real extrayendo metros del nombre
@@ -1748,7 +1750,8 @@ def webhook():
                 if isinstance(err, tuple) and err[0] == 'RETALES':
                     # Devolución de retal — mostrar lista y que elija cuál devuelve
                     candidatos = err[1]
-                    set_dato(numero, 'stock_retales_candidatos', [list(c) for c in candidatos])
+                    candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4])] for c in candidatos]
+                    set_dato(numero, 'stock_retales_candidatos', candidatos_serial)
                     set_paso(numero, 'stock_devol_retales_elegir')
                     lista_r = '\n'.join([f"*{i}.* {c[1]} — {c[3]} {c[2]}" for i, c in enumerate(candidatos, 1)])
                     msg.body(
