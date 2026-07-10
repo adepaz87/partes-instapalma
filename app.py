@@ -1559,7 +1559,21 @@ def webhook():
         else:
             mat, err = buscar_material_msg(incoming_msg)
             if err:
-                msg.body(err)
+                if isinstance(err, tuple) and err[0] == 'RETALES':
+                    # Es un grupo de retales — preguntar metros necesarios
+                    candidatos = err[1]
+                    set_dato(numero, 'stock_retales_candidatos', [list(c) for c in candidatos])
+                    set_dato(numero, 'stock_mat_busqueda', incoming_msg)
+                    set_paso(numero, 'stock_salida_retales_metros')
+                    total_m = sum(float(c[3]) for c in candidatos if c[3] > 0)
+                    lista_r = '\n'.join([f"  • {c[1]} — {c[3]} {c[2]}" for c in candidatos if c[3] > 0])
+                    msg.body(
+                        f"📏 *Retales disponibles de {incoming_msg}:*\n{lista_r}\n"
+                        f"Total: *{total_m} m*\n\n"
+                        f"¿Cuántos metros necesitas?"
+                    )
+                else:
+                    msg.body(err)
             else:
                 set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2], 'stock': float(mat[3])})
                 set_paso(numero, 'stock_salida_cantidad')
@@ -1568,6 +1582,73 @@ def webhook():
                     f"Stock disponible: *{mat[3]} {mat[2]}*\n\n"
                     f"¿Qué *cantidad* retiras?"
                 )
+
+    elif paso == 'stock_salida_retales_metros':
+        try:
+            metros_necesarios = float(incoming_msg.replace(',','.'))
+            if metros_necesarios <= 0:
+                msg.body("Los metros deben ser mayor que 0.")
+            else:
+                datos_s = get_estado(numero)['datos']
+                candidatos = [tuple(c) for c in datos_s.get('stock_retales_candidatos', [])]
+                sugerencia = sugerir_retales(candidatos, metros_necesarios)
+                set_dato(numero, 'stock_retales_sugerencia', sugerencia)
+                set_dato(numero, 'stock_retales_metros', metros_necesarios)
+
+                if sugerencia['total_disponible'] < metros_necesarios:
+                    msg.body(
+                        f"⚠️ Solo hay *{sugerencia['total_disponible']} m* disponibles en total "
+                        f"y necesitas *{metros_necesarios} m*. Stock insuficiente.\n\n"
+                        f"¿Otro material? Escribe el nombre o di *listo*."
+                    )
+                    set_paso(numero, 'stock_salida_material')
+                else:
+                    set_paso(numero, 'stock_salida_retales_elegir')
+                    texto = f"📐 Necesitas *{metros_necesarios} m*. Retales disponibles:\n\n"
+                    for i, r in enumerate(sugerencia['retales'], 1):
+                        suficiente = ' ✅' if r['metros'] >= metros_necesarios else ''
+                        texto += f"*{i}.* {r['nombre']} — {r['metros']} m{suficiente}\n"
+                    texto += "\n"
+                    if sugerencia['individuales']:
+                        mejor = sugerencia['individuales'][0]
+                        texto += f"💡 *Sugerencia:* Retal {sugerencia['retales'].index(mejor)+1} ({mejor['metros']} m) cubre solo.\n"
+                    elif sugerencia['combinacion']:
+                        nums = [sugerencia['retales'].index(r)+1 for r in sugerencia['combinacion']]
+                        total = sum(r['metros'] for r in sugerencia['combinacion'])
+                        texto += f"💡 *Sugerencia:* Retales {'+'.join(map(str,nums))} = {total} m (combinación óptima).\n"
+                    texto += "\nResponde el *número* del retal que coges, o varios separados por coma (ej: *1,3*)."
+                    msg.body(texto)
+        except:
+            msg.body("Escribe solo el número de metros. Ejemplo: *10* o *5.5*")
+
+    elif paso == 'stock_salida_retales_elegir':
+        datos_s = get_estado(numero)['datos']
+        sugerencia = datos_s.get('stock_retales_sugerencia', {})
+        retales_disp = sugerencia.get('retales', [])
+        try:
+            # Parsear selección: "1", "1,3", "2 y 3"
+            import re as _re
+            nums_str = _re.findall(r'\d+', incoming_msg)
+            seleccionados_idx = [int(n)-1 for n in nums_str if 0 < int(n) <= len(retales_disp)]
+            if not seleccionados_idx:
+                msg.body(f"Responde el número del retal (1-{len(retales_disp)}) o varios separados por coma.")
+            else:
+                lineas = datos_s.get('stock_lineas', [])
+                for idx in seleccionados_idx:
+                    r = retales_disp[idx]
+                    lineas.append({
+                        'material': r['nombre'], 'cantidad': r['metros'],
+                        'unidad': r['unidad'], 'material_id': r['id']
+                    })
+                set_dato(numero, 'stock_lineas', lineas)
+                set_paso(numero, 'stock_salida_material')
+                añadidos = ', '.join([retales_disp[i]['nombre'] for i in seleccionados_idx])
+                msg.body(
+                    f"✅ Añadido: *{añadidos}*\n\n"
+                    f"¿Otro material? Escribe el nombre o di *listo* para terminar."
+                )
+        except:
+            msg.body(f"Responde el número del retal. Ejemplo: *1* o *1,2*")
 
     elif paso == 'stock_salida_cantidad':
         try:
@@ -1661,11 +1742,46 @@ def webhook():
         else:
             mat, err = buscar_material_msg(incoming_msg)
             if err:
-                msg.body(err)
+                if isinstance(err, tuple) and err[0] == 'RETALES':
+                    # Devolución de retal — mostrar lista y que elija cuál devuelve
+                    candidatos = err[1]
+                    set_dato(numero, 'stock_retales_candidatos', [list(c) for c in candidatos])
+                    set_paso(numero, 'stock_devol_retales_elegir')
+                    lista_r = '\n'.join([f"*{i}.* {c[1]} — {c[3]} {c[2]}" for i, c in enumerate(candidatos, 1)])
+                    msg.body(
+                        f"📥 *Retales de {incoming_msg}:*\n{lista_r}\n\n"
+                        f"¿Qué retal devuelves? Responde el *número*."
+                    )
+                else:
+                    msg.body(err)
             else:
                 set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2]})
                 set_paso(numero, 'stock_devol_cantidad')
                 msg.body(f"📥 *{mat[1]}*\n¿Qué *cantidad* devuelves?")
+
+    elif paso == 'stock_devol_retales_elegir':
+        datos_d = get_estado(numero)['datos']
+        candidatos = [tuple(c) for c in datos_d.get('stock_retales_candidatos', [])]
+        try:
+            import re as _re
+            nums_str = _re.findall(r'\d+', incoming_msg)
+            seleccionados_idx = [int(n)-1 for n in nums_str if 0 < int(n) <= len(candidatos)]
+            if not seleccionados_idx:
+                msg.body(f"Responde el número del retal (1-{len(candidatos)}).")
+            else:
+                lineas = datos_d.get('stock_lineas', [])
+                for idx in seleccionados_idx:
+                    c = candidatos[idx]
+                    lineas.append({'material': c[1], 'cantidad': float(c[3]), 'unidad': c[2], 'material_id': c[0]})
+                set_dato(numero, 'stock_lineas', lineas)
+                set_paso(numero, 'stock_devol_material')
+                añadidos = ', '.join([candidatos[i][1] for i in seleccionados_idx])
+                msg.body(
+                    f"✅ Añadido: *{añadidos}*\n\n"
+                    f"¿Otro material? Escribe el nombre o di *listo* para terminar."
+                )
+        except:
+            msg.body(f"Responde el número del retal. Ejemplo: *1* o *1,2*")
 
     elif paso == 'stock_devol_cantidad':
         try:
@@ -2859,9 +2975,80 @@ def buscar_material_msg(texto):
         return None, f"❌ No encontré *{texto}* en el catálogo. Escribe el nombre exacto o parte de él."
     if len(r) == 1:
         return r[0], None  # único resultado aproximado
-    # Varios candidatos
+    # Varios candidatos — detectar si son retales del mismo cable
+    if detectar_retales(r):
+        return None, ('RETALES', r)  # señal especial: es un grupo de retales
     lista = '\n'.join([f"• {x[1]} ({x[3]} {x[2]})" for x in r])
     return None, f"🔍 Encontré varios materiales:\n{lista}\n\nEscribe el nombre más completo."
+
+
+def detectar_retales(candidatos):
+    """
+    Detecta si una lista de candidatos son retales del mismo material
+    (misma raíz de nombre, unidad m/ml/metros, o stock=1 en todos).
+    """
+    if len(candidatos) < 2:
+        return False
+    unidades_longitud = {'m', 'ml', 'metros', 'metro'}
+    for c in candidatos:
+        if str(c[2]).lower() in unidades_longitud:
+            return True
+    if all(c[3] == 1 for c in candidatos):
+        return True
+    return False
+
+
+def sugerir_retales(retales, metros_necesarios):
+    """
+    Dado un listado de retales (id, nombre, unidad, stock, minimo)
+    y los metros necesarios, devuelve sugerencias de combinación óptima.
+    """
+    import re
+    def extraer_metros(r):
+        nombre = r[1]
+        m = re.search(r'(\d+[.,]?\d*)\s*(ml?|metros?)\b', nombre.lower())
+        if m:
+            return float(m.group(1).replace(',', '.'))
+        m2 = re.search(r'(\d+[.,]?\d*)$', nombre.strip())
+        if m2:
+            return float(m2.group(1).replace(',', '.'))
+        return float(r[3])  # fallback: stock_actual como longitud
+
+    retales_con_m = []
+    for r in retales:
+        if r[3] <= 0:
+            continue
+        metros = extraer_metros(r)
+        retales_con_m.append({
+            'id': r[0], 'nombre': r[1], 'unidad': r[2],
+            'metros': metros, 'stock': r[3]
+        })
+
+    total_disponible = sum(x['metros'] for x in retales_con_m)
+
+    # Retales individuales que cubren solos (ordenados de menor a mayor desperdicio)
+    individuales = sorted(
+        [r for r in retales_con_m if r['metros'] >= metros_necesarios],
+        key=lambda x: x['metros']
+    )
+
+    # Combinación greedy: los más grandes hasta cubrir
+    combinacion = []
+    if not individuales:
+        disponibles = sorted(retales_con_m, key=lambda x: -x['metros'])
+        acumulado = 0
+        for r in disponibles:
+            combinacion.append(r)
+            acumulado += r['metros']
+            if acumulado >= metros_necesarios:
+                break
+
+    return {
+        'individuales': individuales,
+        'combinacion': combinacion,
+        'total_disponible': total_disponible,
+        'retales': retales_con_m
+    }
 
 
 
