@@ -1586,7 +1586,7 @@ def get_parte_by_id(parte_id):
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes WHERE id=%s", (parte_id,))
+        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at FROM partes WHERE id=%s", (parte_id,))
         r = cur.fetchone()
         cur.close(); conn.close()
         return r
@@ -1599,10 +1599,10 @@ def listar_partes():
         try:
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
+            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
             rows = cur.fetchall()
             cur.close(); conn.close()
-            partes = [{'id':r[0],'numero_parte':r[1],'fecha':r[2],'operario':r[3],'cliente':r[4],'obra':r[5],'operarios':r[6],'albaranes':r[7],'material_stock':r[8],'descripcion':r[9],'terminado':r[10],'tiempo_restante':r[11],'created_at':str(r[12])} for r in rows]
+            partes = [{'id':r[0],'numero_parte':r[1],'fecha':r[2],'operario':r[3],'cliente':r[4],'obra':r[5],'operarios':r[6],'albaranes':r[7],'material_stock':r[8],'devolucion_almacen':r[9],'descripcion':r[10],'terminado':r[11],'tiempo_restante':r[12],'created_at':str(r[13])} for r in rows]
             return {'partes': partes, 'total': len(partes)}, 200
         except Exception as e:
             return {'error': str(e)}, 500
@@ -1677,10 +1677,10 @@ def ver_parte(parte_id):
     if not r:
         return "<p style='padding:40px;font-family:sans-serif'>Parte no encontrado.</p>", 404
 
-    terminado = r[10] or ''
+    terminado = r[11] or ''
     es_ok = 'í' in terminado.lower() or terminado.lower() == 'si'
     estado_html = f'<div class="estado-ok">✅ TRABAJO TERMINADO</div>' if es_ok \
-        else f'<div class="estado-curso">🔄 EN CURSO — Tiempo restante: {r[11] or "no especificado"}</div>'
+        else f'<div class="estado-curso">🔄 EN CURSO — Tiempo restante: {r[12] or "no especificado"}</div>'
     operario_limpio = nombre_operario(r[3] or '')
 
     html = f"""<!DOCTYPE html>
@@ -1697,7 +1697,7 @@ def ver_parte(parte_id):
 <div class="ficha">
   <div class="ficha-header">
     <h2>Parte — {r[2] or ''}</h2>
-    <p>Fecha: {r[2] or '—'} &nbsp;·&nbsp; Registrado: {str(r[12])[:16] if r[12] else '—'}</p>
+    <p>Fecha: {r[2] or '—'} &nbsp;·&nbsp; Registrado: {str(r[13])[:16] if r[13] else '—'}</p>
   </div>
   <div class="ficha-body">
     <div class="grid2">
@@ -1708,7 +1708,8 @@ def ver_parte(parte_id):
     <div class="campo"><label>Operarios y horas</label><div class="val">{r[6] or '—'}</div></div>
     <div class="campo"><label>Albaranes</label><div class="val">{r[7] or '—'}</div></div>
     <div class="campo"><label>Material de stock</label><div class="val">{r[8] or '—'}</div></div>
-    <div class="campo"><label>Descripción de trabajos</label><div class="val">{r[9] or '—'}</div></div>
+    <div class="campo"><label>Devolución a almacén</label><div class="val">{r[9] or '—'}</div></div>
+    <div class="campo"><label>Descripción de trabajos</label><div class="val">{r[10] or '—'}</div></div>
     {estado_html}
     <a class="btn-pdf" href="/partes/{parte_id}/pdf">⬇ Descargar PDF</a>
   </div>
@@ -1725,7 +1726,8 @@ def descargar_pdf(parte_id):
     datos = {
         'numero_parte': r[1], 'fecha': r[2], 'cliente': r[4], 'obra': r[5],
         'operarios': r[6] or '', 'albaranes': r[7] or '', 'material_stock': r[8] or '',
-        'descripcion': r[9] or '', 'terminado': r[10] or '', 'tiempo_restante': r[11] or ''
+        'devolucion_almacen': r[9] or 'Ninguno',
+        'descripcion': r[10] or '', 'terminado': r[11] or '', 'tiempo_restante': r[12] or ''
     }
     pdf_bytes = generar_pdf(datos)
     fecha_pdf2 = (r[2] or '').replace('/', '-').replace(' ', '')
