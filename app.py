@@ -1692,13 +1692,34 @@ def webhook():
             lineas = datos_d.get('stock_lineas', [])
             nombre_op = datos_d.get('nombre_operario', nombre_operario(numero))
             borrar_estado(numero)
-            for l in lineas:
-                ajustar_stock(l['material_id'], l['cantidad'])
-                registrar_movimiento('devolucion', l['material_id'], l['material'], l['cantidad'],
-                    l['unidad'], numero, nombre_op)
-            resumen = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
-            enviar_whatsapp(SUPERVISOR_WA, f"📥 *Devolución almacén*\n👷 {nombre_op}\n{resumen}")
-            msg.body(f"✅ Devolución registrada. Stock actualizado.\n\n{resumen}")
+            import threading as _th
+            def _procesar_devolucion():
+                numero_alb = siguiente_numero_albaran()
+                from datetime import datetime as dt
+                fecha_str = dt.now().strftime('%d/%m/%Y %H:%M')
+                aid = crear_albaran(numero_alb, numero, nombre_op, 'DEVOLUCIÓN A ALMACÉN', lineas)
+                for l in lineas:
+                    ajustar_stock(l['material_id'], l['cantidad'])
+                    registrar_movimiento('devolucion', l['material_id'], l['material'], l['cantidad'],
+                        l['unidad'], numero, nombre_op, '', aid)
+                pdf_bytes = generar_pdf_albaran({
+                    'numero': numero_alb, 'nombre_operario': nombre_op,
+                    'obra': 'DEVOLUCIÓN A ALMACÉN', 'lineas': lineas, 'fecha': fecha_str, 'tipo': 'devolucion'
+                })
+                pdf_url = subir_pdf_albaran(pdf_bytes, numero_alb)
+                op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
+                resumen_txt = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                texto = (
+                    f"✅ *Albarán devolución {numero_alb}*\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📥 Material devuelto al almacén\n{resumen_txt}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━"
+                )
+                enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
+                enviar_whatsapp(SUPERVISOR_WA, f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n{resumen_txt}",
+                    media_url=pdf_url if pdf_url else None)
+            _th.Thread(target=_procesar_devolucion, daemon=True).start()
+            msg.body("✅ Devolución registrada. Stock actualizado. Te envío el albarán en un momento.")
         elif es_cancelacion(incoming_msg):
             borrar_estado(numero)
             msg.body("❌ Cancelado.")
@@ -2721,7 +2742,7 @@ def siguiente_numero_albaran():
 # ── PDF albarán interno ───────────────────────────────────────────────────────
 
 def generar_pdf_albaran(albaran):
-    """albaran: dict con numero, nombre_operario, obra, lineas, fecha."""
+    """albaran: dict con numero, nombre_operario, obra, lineas, fecha, tipo ('salida'|'devolucion')."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4,
         rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
@@ -2741,9 +2762,13 @@ def generar_pdf_albaran(albaran):
     else:
         logo = Paragraph("INSTAPALMA", titulo_style)
 
+    es_devol = albaran.get('tipo','') == 'devolucion' or 'DEVOLUCI' in albaran.get('obra','').upper()
+    titulo_alb = '📥 ALBARÁN DEVOLUCIÓN A ALMACÉN' if es_devol else '📤 ALBARÁN INTERNO DE ALMACÉN'
+    titulo_sec = 'MATERIALES DEVUELTOS' if es_devol else 'MATERIALES RETIRADOS'
+
     cab_style = ParagraphStyle('c', fontName='Helvetica-Bold', fontSize=16,
         textColor=AZUL, alignment=1, leading=20)
-    cab = Table([[logo, Paragraph('ALBARÁN INTERNO DE ALMACÉN', cab_style)]], colWidths=[5*cm, 12*cm])
+    cab = Table([[logo, Paragraph(titulo_alb, cab_style)]], colWidths=[5*cm, 12*cm])
     cab.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
     elements.append(cab)
     elements.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=8))
@@ -2751,11 +2776,12 @@ def generar_pdf_albaran(albaran):
 
     from datetime import datetime as dt
     fecha_str = albaran.get('fecha', dt.now().strftime('%d/%m/%Y %H:%M'))
+    obra_label = 'Devuelto por' if es_devol else 'Obra / Cliente'
     t_cab = Table([
         ['Nº Albarán', albaran.get('numero','')],
         ['Fecha', fecha_str],
         ['Operario', albaran.get('nombre_operario','')],
-        ['Obra / Cliente', albaran.get('obra','')],
+        [obra_label, albaran.get('nombre_operario','') if es_devol else albaran.get('obra','')],
     ], colWidths=[4*cm, 13*cm])
     t_cab.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(0,-1),AZUL),
@@ -2772,7 +2798,7 @@ def generar_pdf_albaran(albaran):
     # Líneas de material
     sec_style = ParagraphStyle('s', fontSize=9, textColor=colors.white,
         backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=0, spaceBefore=4, borderPad=4)
-    elements.append(Paragraph('MATERIALES RETIRADOS', sec_style))
+    elements.append(Paragraph(titulo_sec, sec_style))
     elements.append(Spacer(1, 0.1*cm))
 
     lineas = albaran.get('lineas', [])
