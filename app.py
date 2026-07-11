@@ -271,7 +271,22 @@ def iniciar_parte(numero):
         print(f"Error iniciar_parte: {e}")
 
 
-MENSAJES_INICIO = ['parte', 'parte de trabajo', 'nuevo parte', 'abrir parte', 'crear parte', 'hola']
+MENSAJES_INICIO = ['parte', 'parte de trabajo', 'nuevo parte', 'abrir parte', 'crear parte']
+MENSAJES_HOLA   = ['hola', 'menu', 'menú', 'inicio', 'ayuda']
+
+MENU_PRINCIPAL = (
+    "👋 *Hola! Soy el bot de Instapalma*\n\n"
+    "¿Qué quieres hacer?\n\n"
+    "1️⃣ Partes de trabajo\n"
+    "2️⃣ Salida de almacén\n"
+    "3️⃣ Devolución almacén\n"
+    "4️⃣ Consulta\n"
+    "5️⃣ Herramienta\n"
+    "6️⃣ Vacaciones\n"
+    "7️⃣ Resumen fin de mes\n"
+    "8️⃣ Vehículos\n\n"
+    "_Escribe el número o la palabra clave directamente_"
+)
 
 def normalizar(texto):
     return texto.strip().lower()
@@ -1563,6 +1578,67 @@ def webhook():
                 msg.body(f"No encontré la solicitud #{vac_id}. Verifica el número.")
             return str(resp) if not use_meta else ('OK', 200)
 
+    # ── Menú principal: "hola" ────────────────────────────────────────────────
+    if normalizar(incoming_msg).strip() in MENSAJES_HOLA:
+        set_paso(numero, 'menu_principal')
+        msg.body(MENU_PRINCIPAL)
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Selección del menú principal ──────────────────────────────────────────
+    if estado and estado.get('paso') == 'menu_principal':
+        op = msg_n_herr.strip()
+        borrar_estado(numero)
+        if op == '1':
+            iniciar_parte(numero)
+            msg.body("👷 *Bot de Partes de Trabajo — Instapalma*\n\nVamos a crear tu parte paso a paso.\n\n1️⃣ ¿Cuál es el *cliente*?")
+        elif op == '2':
+            num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
+            nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
+            if nombre_conocido2:
+                set_dato(numero, 'nombre_operario', nombre_conocido2)
+            set_dato(numero, 'stock_lineas', [])
+            set_paso(numero, 'stock_salida_obra')
+            msg.body("📤 *SALIDA DE ALMACÉN*\n\n¿Para qué *obra o cliente* es esta salida?\n_Ejemplo: Ayuntamiento Los Llanos — Calle Real_")
+        elif op == '3':
+            num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
+            nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
+            if nombre_conocido2:
+                set_dato(numero, 'nombre_operario', nombre_conocido2)
+            set_dato(numero, 'stock_lineas', [])
+            set_paso(numero, 'stock_devol_material')
+            msg.body("📥 *DEVOLUCIÓN A ALMACÉN*\n\n¿Qué material devuelves?\n_Escribe el nombre del material_")
+        elif op == '4':
+            set_paso(numero, 'consulta_menu')
+            msg.body("🔍 *CONSULTA*\n\n1️⃣ Material de almacén\n2️⃣ Stock de herramienta")
+        elif op == '5':
+            set_paso(numero, 'herr_menu')
+            msg.body(MENU_HERRAMIENTA)
+        elif op == '6':
+            iniciar_vacaciones(numero)
+            num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
+            nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
+            if nombre_conocido2:
+                set_dato(numero, 'nombre_operario', nombre_conocido2)
+                set_paso(numero, 'vac_inicio')
+            else:
+                set_paso(numero, 'vac_nombre')
+            msg.body("🏖️ *Solicitud de Vacaciones*\n\n¿Cuál es tu nombre completo?" if not nombre_conocido2 else f"🏖️ *Solicitud de Vacaciones*\n\nHola {nombre_conocido2}! ¿Desde qué fecha?\n_Ejemplo: 01/08/2026_")
+        elif op == '7':
+            num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
+            nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
+            if nombre_conocido2:
+                set_dato(numero, 'nombre_operario', nombre_conocido2)
+                set_paso(numero, 'resumen_mes')
+            else:
+                set_paso(numero, 'resumen_nombre')
+            msg.body("📊 *RESUMEN FIN DE MES*\n\n¿De qué mes es el resumen?\n_Ejemplo: Junio 2026_" if nombre_conocido2 else "📊 *RESUMEN FIN DE MES*\n\n¿Cuál es tu nombre completo?")
+        elif op == '8':
+            set_paso(numero, 'vehiculo_menu')
+            msg.body("🚗 *Vehículos*\n\nEscribe *vehiculo* para acceder al módulo de mantenimiento.")
+        else:
+            msg.body(MENU_PRINCIPAL)
+        return str(resp) if not use_meta else ('OK', 200)
+
     if not estado:
         if any(p in normalizar(incoming_msg) for p in MENSAJES_INICIO):
             iniciar_parte(numero)
@@ -1572,7 +1648,7 @@ def webhook():
                 "1️⃣ ¿Cuál es el *cliente*?"
             )
         else:
-            msg.body("Hola 👋 Para crear un parte de trabajo escribe: *parte*")
+            msg.body("Hola 👋 Escribe *hola* para ver el menú o *parte* para crear un parte de trabajo.")
         return str(resp)
 
     paso = estado['paso']
