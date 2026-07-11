@@ -2971,29 +2971,31 @@ def generar_pdf_albaran(albaran):
     lineas = albaran.get('lineas', [])
     # Comprobar si alguna línea tiene precio
     tiene_precios = any(float(l.get('precio', 0) or 0) > 0 for l in lineas)
+    # Signo negativo en devoluciones
+    signo = -1 if es_devol else 1
 
     if tiene_precios:
         filas = [['Material', 'Cantidad', 'Unidad', 'P. Unit. (€)', 'Total (€)']]
         total_general = 0
         for l in lineas:
-            cant = float(l.get('cantidad', 0) or 0)
+            cant = float(l.get('cantidad', 0) or 0) * signo
             precio = float(l.get('precio', 0) or 0)
             subtotal = cant * precio
             total_general += subtotal
             filas.append([
                 l.get('material',''),
-                f"{cant:g}",
+                f"{cant:+g}" if es_devol else f"{cant:g}",
                 l.get('unidad',''),
                 f"{precio:.2f}" if precio > 0 else '—',
-                f"{subtotal:.2f}" if precio > 0 else '—'
+                f"{subtotal:+.2f}" if precio > 0 else '—'
             ])
-        # Fila total
-        filas.append(['', '', '', 'TOTAL', f"{total_general:.2f} €"])
+        filas.append(['', '', '', 'TOTAL', f"{total_general:+.2f} €" if es_devol else f"{total_general:.2f} €"])
         col_widths = [7.5*cm, 2.5*cm, 2*cm, 3*cm, 2*cm]
     else:
         filas = [['Material', 'Cantidad', 'Unidad']]
         for l in lineas:
-            filas.append([l.get('material',''), f"{float(l.get('cantidad',0) or 0):g}", l.get('unidad','')])
+            cant = float(l.get('cantidad', 0) or 0) * signo
+            filas.append([l.get('material',''), f"{cant:+g}" if es_devol else f"{cant:g}", l.get('unidad','')])
         col_widths = [10*cm, 3.5*cm, 3.5*cm]
 
     VERDE = colors.HexColor('#1a5c3a')
