@@ -1587,7 +1587,7 @@ def webhook():
                     set_paso(numero, 'stock_salida_material')
                     msg.body(err)
             else:
-                set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2], 'stock': float(mat[3])})
+                set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2], 'stock': float(mat[3]), 'precio': float(mat[5]) if len(mat) > 5 and mat[5] else 0})
                 set_paso(numero, 'stock_salida_cantidad')
                 msg.body(
                     f"📦 *{mat[1]}*\n"
@@ -1653,7 +1653,8 @@ def webhook():
                         'cantidad': r['metros'],   # metros en el albarán (informativo)
                         'unidad': r['unidad'],
                         'material_id': r['id'],
-                        'delta_stock': -1          # un retal = 1 unidad de stock
+                        'delta_stock': -1,         # un retal = 1 unidad de stock
+                        'precio': r.get('precio', 0)
                     })
                 set_dato(numero, 'stock_lineas', lineas)
                 set_paso(numero, 'stock_salida_material')
@@ -1676,7 +1677,7 @@ def webhook():
                 msg.body(f"⚠️ Solo hay *{mat_tmp.get('stock',0)} {mat_tmp.get('unidad','')}* disponibles. Indica una cantidad menor.")
             else:
                 lineas = datos_s.get('stock_lineas', [])
-                lineas.append({'material': mat_tmp['nombre'], 'cantidad': cantidad, 'unidad': mat_tmp['unidad'], 'material_id': mat_tmp['id']})
+                lineas.append({'material': mat_tmp['nombre'], 'cantidad': cantidad, 'unidad': mat_tmp['unidad'], 'material_id': mat_tmp['id'], 'precio': mat_tmp.get('precio', 0)})
                 set_dato(numero, 'stock_lineas', lineas)
                 set_paso(numero, 'stock_salida_material')
                 msg.body(
@@ -2728,9 +2729,21 @@ def init_stock_db():
                 unidad VARCHAR(30) DEFAULT 'ud',
                 stock_actual NUMERIC(12,3) DEFAULT 0,
                 stock_minimo NUMERIC(12,3) DEFAULT 0,
+                precio_unitario NUMERIC(12,4) DEFAULT 0,
                 created_at TIMESTAMP DEFAULT NOW(),
                 updated_at TIMESTAMP DEFAULT NOW()
             )
+        """)
+        # Migración: añadir columna precio_unitario si no existe
+        cur.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='stock_materiales' AND column_name='precio_unitario'
+                ) THEN
+                    ALTER TABLE stock_materiales ADD COLUMN precio_unitario NUMERIC(12,4) DEFAULT 0;
+                END IF;
+            END $$;
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS stock_movimientos (
@@ -2785,14 +2798,14 @@ def get_material_by_nombre(nombre):
     try:
         conn = get_db(); cur = conn.cursor()
         # Exacto (sin tildes)
-        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE LOWER(nombre)=LOWER(%s)", (nombre,))
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, precio_unitario FROM stock_materiales WHERE LOWER(nombre)=LOWER(%s)", (nombre,))
         r = cur.fetchone()
         if r:
             return r
         # Aproximado con ILIKE sobre cada palabra del texto buscado (tolerante a tildes)
         palabras = [p for p in _norm(nombre).split() if len(p) > 1]
         # Buscar todos y filtrar en Python para tolerancia de tildes
-        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo FROM stock_materiales ORDER BY nombre")
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, precio_unitario FROM stock_materiales ORDER BY nombre")
         todos = cur.fetchall()
         cur.close(); conn.close()
         resultados = []
@@ -2956,23 +2969,72 @@ def generar_pdf_albaran(albaran):
     elements.append(Spacer(1, 0.1*cm))
 
     lineas = albaran.get('lineas', [])
-    filas = [['Material', 'Cantidad', 'Unidad']]
-    for l in lineas:
-        filas.append([l.get('material',''), str(l.get('cantidad','')), l.get('unidad','')])
+    # Comprobar si alguna línea tiene precio
+    tiene_precios = any(float(l.get('precio', 0) or 0) > 0 for l in lineas)
 
-    t_lin = Table(filas, colWidths=[10*cm, 3.5*cm, 3.5*cm])
-    t_lin.setStyle(TableStyle([
+    if tiene_precios:
+        filas = [['Material', 'Cantidad', 'Unidad', 'P. Unit. (€)', 'Total (€)']]
+        total_general = 0
+        for l in lineas:
+            cant = float(l.get('cantidad', 0) or 0)
+            precio = float(l.get('precio', 0) or 0)
+            subtotal = cant * precio
+            total_general += subtotal
+            filas.append([
+                l.get('material',''),
+                f"{cant:g}",
+                l.get('unidad',''),
+                f"{precio:.2f}" if precio > 0 else '—',
+                f"{subtotal:.2f}" if precio > 0 else '—'
+            ])
+        # Fila total
+        filas.append(['', '', '', 'TOTAL', f"{total_general:.2f} €"])
+        col_widths = [7.5*cm, 2.5*cm, 2*cm, 3*cm, 2*cm]
+    else:
+        filas = [['Material', 'Cantidad', 'Unidad']]
+        for l in lineas:
+            filas.append([l.get('material',''), f"{float(l.get('cantidad',0) or 0):g}", l.get('unidad','')])
+        col_widths = [10*cm, 3.5*cm, 3.5*cm]
+
+    VERDE = colors.HexColor('#1a5c3a')
+    t_lin = Table(filas, colWidths=col_widths)
+    estilo_tabla = [
         ('BACKGROUND',(0,0),(-1,0),AZUL),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
         ('FONTSIZE',(0,0),(-1,-1),10),
         ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
         ('PADDING',(0,0),(-1,-1),8),
-        ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, GRIS]),
+        ('ROWBACKGROUNDS',(0,1),(-1,-2 if tiene_precios else -1),[colors.white, GRIS]),
         ('ALIGN',(1,0),(-1,-1),'CENTER'),
-    ]))
+    ]
+    if tiene_precios:
+        # Fila de total en negrita con fondo
+        estilo_tabla += [
+            ('BACKGROUND',(0,-1),(-1,-1),AZUL),
+            ('TEXTCOLOR',(0,-1),(-1,-1),colors.white),
+            ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+            ('SPAN',(0,-1),(2,-1)),
+        ]
+    t_lin.setStyle(TableStyle(estilo_tabla))
     elements.append(t_lin)
     elements.append(Spacer(1, 1*cm))
+
+    # Firma
+    if not es_devol:
+        firma_table = Table([
+            ['Firma del operario:', ''],
+            ['', ''],
+        ], colWidths=[8*cm, 9*cm])
+        firma_table.setStyle(TableStyle([
+            ('FONTNAME',(0,0),(0,0),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),9),
+            ('LINEBELOW',(1,1),(1,1),1,colors.black),
+            ('BOTTOMPADDING',(0,0),(-1,-1),18),
+        ]))
+        elements.append(firma_table)
+        elements.append(Spacer(1, 0.3*cm))
+
     elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
     elements.append(Paragraph(f"Generado el {fecha_str} — Instapalma · Almacén", pie_style))
     doc.build(elements)
@@ -3059,7 +3121,8 @@ def sugerir_retales(retales, metros_necesarios):
         metros = extraer_metros(r)
         retales_con_m.append({
             'id': r[0], 'nombre': r[1], 'unidad': r[2],
-            'metros': metros, 'stock': r[3]
+            'metros': metros, 'stock': r[3],
+            'precio': float(r[5]) if len(r) > 5 and r[5] else 0
         })
 
     total_disponible = sum(x['metros'] for x in retales_con_m)
@@ -3179,14 +3242,15 @@ def editar_material(mid=None):
         unidad = req.form.get('unidad','ud').strip()
         stock  = float(req.form.get('stock_actual', 0) or 0)
         minimo = float(req.form.get('stock_minimo', 0) or 0)
+        precio = float(req.form.get('precio_unitario', 0) or 0)
         try:
             conn = get_db(); cur = conn.cursor()
             if mid:
-                cur.execute("UPDATE stock_materiales SET nombre=%s, unidad=%s, stock_actual=%s, stock_minimo=%s, updated_at=NOW() WHERE id=%s",
-                    (nombre, unidad, stock, minimo, mid))
+                cur.execute("UPDATE stock_materiales SET nombre=%s, unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, updated_at=NOW() WHERE id=%s",
+                    (nombre, unidad, stock, minimo, precio, mid))
             else:
-                cur.execute("INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo) VALUES (%s,%s,%s,%s) ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, updated_at=NOW()",
-                    (nombre, unidad, stock, minimo, unidad, stock, minimo))
+                cur.execute("INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo, precio_unitario) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, updated_at=NOW()",
+                    (nombre, unidad, stock, minimo, precio, unidad, stock, minimo, precio))
             conn.commit(); cur.close(); conn.close()
         except Exception as e:
             return f"Error: {e}", 500
@@ -3251,11 +3315,13 @@ def importar_excel():
             except: stock = 0
             try: minimo = float(str(f.get('stock_minimo', f.get('minimo',0))).replace(',','.'))
             except: minimo = 0
+            try: precio = float(str(f.get('precio_unitario', f.get('precio', f.get('pvp',0)))).replace(',','.'))
+            except: precio = 0
             cur.execute("""
-                INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo)
-                VALUES (%s,%s,%s,%s)
-                ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, updated_at=NOW()
-            """, (nombre, unidad, stock, minimo, unidad, stock, minimo))
+                INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo, precio_unitario)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, updated_at=NOW()
+            """, (nombre, unidad, stock, minimo, precio, unidad, stock, minimo, precio))
             importados += 1
         conn.commit(); cur.close(); conn.close()
         from flask import redirect
