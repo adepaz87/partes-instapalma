@@ -2541,19 +2541,31 @@ def admin_reset_conv():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/reset-herramienta', methods=['POST'])
+def admin_reset_herramienta():
+    """Vacía herramienta_obra y herramienta para recarga limpia."""
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM herramienta_obra")
+        cur.execute("DELETE FROM herramienta")
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'msg': 'Tablas herramienta vaciadas'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/carga-herramienta', methods=['POST'])
 def admin_carga_herramienta():
-    """Carga masiva de herramienta en obra desde JSON. Uso interno."""
+    """Carga masiva de herramienta. Body: lista de {nombre, obra, responsable, fecha_alta, cantidad}"""
     try:
-        items = request.get_json()  # lista de {nombre, obra, responsable, fecha_alta}
+        items = request.get_json()
         conn = get_db(); cur = conn.cursor()
         insertadas = 0
         for item in items:
-            nombre = item['nombre']
-            obra = item.get('obra', '')
-            resp = item.get('responsable') or ''
-            fecha = item.get('fecha_alta', '2026-01-01')
-            # Herramienta maestra
+            nombre   = item['nombre']
+            obra     = item.get('obra', '')
+            resp     = item.get('responsable') or ''
+            fecha    = item.get('fecha_alta', '2026-01-01')
+            cantidad = int(item.get('cantidad', 1))
             cur.execute("""
                 INSERT INTO herramienta (nombre, tipo, stock_almacen)
                 VALUES (%s, 'almacen', 0)
@@ -2561,11 +2573,12 @@ def admin_carga_herramienta():
             """, (nombre,))
             cur.execute("SELECT id FROM herramienta WHERE nombre=%s", (nombre,))
             herr_id = cur.fetchone()[0]
-            cur.execute("""
-                INSERT INTO herramienta_obra (herramienta_id, operario, nombre_operario, obra, fecha_alta)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (herr_id, resp, resp or '—', obra, fecha))
-            insertadas += 1
+            for _ in range(cantidad):
+                cur.execute("""
+                    INSERT INTO herramienta_obra (herramienta_id, operario, nombre_operario, obra, fecha_alta)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (herr_id, resp, resp or '—', obra, fecha))
+                insertadas += 1
         conn.commit(); cur.close(); conn.close()
         return {'status': 'ok', 'insertadas': insertadas}, 200
     except Exception as e:
