@@ -2553,6 +2553,24 @@ def admin_reset_herramienta():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/fix-herramienta-nombre', methods=['POST'])
+def admin_fix_herramienta_nombre():
+    """Rellena herramienta_nombre en herramienta_obra donde sea NULL, usando la tabla herramienta."""
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            UPDATE herramienta_obra ho
+            SET herramienta_nombre = h.nombre
+            FROM herramienta h
+            WHERE ho.herramienta_id = h.id
+              AND (ho.herramienta_nombre IS NULL OR ho.herramienta_nombre = '')
+        """)
+        rows = cur.rowcount
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'reparados': rows}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/carga-almacen-herramienta', methods=['POST'])
 def admin_carga_almacen_herramienta():
     """Carga stock de almacén. Body: lista de {nombre, stock, observaciones}
@@ -2624,9 +2642,9 @@ def admin_carga_herramienta():
             herr_id = cur.fetchone()[0]
             for _ in range(cantidad):
                 cur.execute("""
-                    INSERT INTO herramienta_obra (herramienta_id, operario, nombre_operario, obra, fecha_alta)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (herr_id, resp, resp or '—', obra, fecha))
+                    INSERT INTO herramienta_obra (herramienta_id, herramienta_nombre, operario, nombre_operario, obra, fecha_alta)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (herr_id, nombre, resp, resp or '—', obra, fecha))
                 insertadas += 1
         conn.commit(); cur.close(); conn.close()
         return {'status': 'ok', 'insertadas': insertadas}, 200
