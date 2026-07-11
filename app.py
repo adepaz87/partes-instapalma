@@ -2951,10 +2951,22 @@ def admin_stock_materiales():
 def admin_albaranes_lista():
     try:
         conn = get_db(); cur = conn.cursor()
+        # Estructura de la tabla
+        cur.execute("""
+            SELECT column_name, data_type, column_default
+            FROM information_schema.columns
+            WHERE table_name='stock_albaranes'
+            ORDER BY ordinal_position
+        """)
+        cols = cur.fetchall()
         cur.execute("SELECT numero, length(pdf_bytes), created_at FROM stock_albaranes ORDER BY created_at DESC LIMIT 20")
         rows = cur.fetchall()
         cur.close(); conn.close()
-        return {'count': len(rows), 'items': [{'numero': r[0], 'bytes': r[1], 'created_at': str(r[2])} for r in rows]}, 200
+        return {
+            'columns': [{'name': c[0], 'type': c[1], 'default': c[2]} for c in cols],
+            'count': len(rows),
+            'items': [{'numero': r[0], 'bytes': r[1], 'created_at': str(r[2])} for r in rows]
+        }, 200
     except Exception as e:
         return {'error': str(e)}, 500
 
@@ -3545,7 +3557,7 @@ def init_stock_db():
         cur.execute("""
             CREATE TABLE IF NOT EXISTS stock_albaranes (
                 id SERIAL PRIMARY KEY,
-                numero VARCHAR(30) UNIQUE,
+                numero VARCHAR(100) UNIQUE,
                 operario VARCHAR(100),
                 nombre_operario VARCHAR(100),
                 obra VARCHAR(200),
@@ -3558,6 +3570,10 @@ def init_stock_db():
         # Migración: añadir columna pdf_bytes si no existe
         cur.execute("""
             ALTER TABLE stock_albaranes ADD COLUMN IF NOT EXISTS pdf_bytes BYTEA
+        """)
+        # Migración: ampliar numero de VARCHAR(30) a VARCHAR(100)
+        cur.execute("""
+            ALTER TABLE stock_albaranes ALTER COLUMN numero TYPE VARCHAR(100)
         """)
         conn.commit(); cur.close(); conn.close()
         print("Stock DB OK")
