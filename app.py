@@ -1255,14 +1255,22 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_baja_nombre':
-        datos_herr = estado.get('datos', {}) if estado else {}
         nombre_herr = incoming_msg.strip()
+        set_dato(numero, 'herr_nombre', nombre_herr)
+        set_paso(numero, 'herr_baja_obra')
+        msg.body(f"📍 ¿De qué obra viene?\n_(Escribe el nombre de la obra)_")
+        return str(resp) if not use_meta else ('OK', 200)
+
+    elif paso_herr == 'herr_baja_obra':
+        datos_herr = estado.get('datos', {}) if estado else {}
+        nombre_herr = datos_herr.get('herr_nombre', '')
+        obra_herr = incoming_msg.strip()
         borrar_estado(numero)
         ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
         msg.body(respuesta)
         if ok:
             enviar_whatsapp(SUPERVISOR_WA,
-                f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}")
+                f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_nueva_cantidad':
