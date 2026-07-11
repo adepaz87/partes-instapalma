@@ -1447,11 +1447,18 @@ def webhook():
                 doc.build(elements)
                 pdf_bytes = buffer.getvalue()
                 import uuid as _uuid
-                fname = f"stock_almacen_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{_uuid.uuid4().hex[:6]}.pdf"
-                fpath = os.path.join(PDF_DIR, fname)
-                with open(fpath, 'wb') as _f:
-                    _f.write(pdf_bytes)
-                url = f"https://bot-production-66b8.up.railway.app/albaran/{fname}"
+                fname = f"stock_almacen_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{_uuid.uuid4().hex[:6]}"
+                try:
+                    _c2 = get_db(); _cur2 = _c2.cursor()
+                    _cur2.execute("""
+                        INSERT INTO stock_albaranes (numero, pdf_bytes)
+                        VALUES (%s, %s)
+                        ON CONFLICT (numero) DO UPDATE SET pdf_bytes=%s
+                    """, (fname, psycopg2.Binary(pdf_bytes), psycopg2.Binary(pdf_bytes)))
+                    _c2.commit(); _cur2.close(); _c2.close()
+                except Exception as _db_e:
+                    print(f"Error guardando PDF almacén: {_db_e}")
+                url = f"https://bot-production-66b8.up.railway.app/albaran/{fname}.pdf"
                 msg.body(f"📦 *Listado completo de almacén:*\n{url}")
             except Exception as e:
                 msg.body(f"❌ Error generando PDF: {e}")
