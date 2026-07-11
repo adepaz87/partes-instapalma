@@ -3094,11 +3094,11 @@ def dashboard():
         # Partes
         cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%'")
         total_partes = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND terminado='si'")
-        partes_terminados = (cur.fetchone() or [0])[0]
+        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND pdf_bytes IS NOT NULL")
+        partes_terminados = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND DATE(created_at) = CURRENT_DATE")
         partes_hoy = cur.fetchone()[0]
-        cur.execute("SELECT numero, nombre_operario, obra, terminado, created_at FROM stock_albaranes WHERE numero LIKE 'ALB-%' ORDER BY created_at DESC LIMIT 8")
+        cur.execute("SELECT numero, nombre_operario, obra, pdf_bytes IS NOT NULL, created_at FROM stock_albaranes WHERE numero LIKE 'ALB-%' ORDER BY created_at DESC LIMIT 8")
         ultimos_partes = cur.fetchall()
         # Stock almacén
         cur.execute("SELECT COUNT(*) FROM stock_materiales")
@@ -3127,7 +3127,7 @@ def dashboard():
     filas_partes = ''
     for p in ultimos_partes:
         num, op, obra, term, cat = p
-        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:8px;font-size:11px">✓ Terminado</span>' if term == 'si' else '<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">🔄 En curso</span>'
+        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:8px;font-size:11px">✓ PDF generado</span>' if term else '<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">🔄 Sin PDF</span>'
         fecha = cat.strftime('%d/%m %H:%M') if cat else '—'
         pdf_link = f'<a href="/albaran/{num}.pdf" target="_blank" style="color:#1a3a5c;font-weight:700;font-size:16px">📄</a>'
         filas_partes += f'<tr><td><b>{num}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td>{badge}</td><td style="font-size:12px;color:#888">{fecha}</td><td style="text-align:center">{pdf_link}</td></tr>'
