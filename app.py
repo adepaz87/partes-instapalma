@@ -2739,11 +2739,20 @@ def servir_albaran_pdf(numero_pdf):
     """Sirve el PDF de un albarán almacenado en BD."""
     from flask import Response
     try:
-        numero = numero_pdf.replace('_', '/').replace('.pdf', '')
-        # También intentar con guiones tal cual
+        # Quitar extensión .pdf si viene en la URL
+        clave = numero_pdf
+        if clave.endswith('.pdf'):
+            clave = clave[:-4]
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT pdf_bytes, numero FROM stock_albaranes WHERE numero = %s OR REPLACE(numero,'/','-') = %s", (numero, numero_pdf.replace('.pdf','')))
+        # Intentar búsqueda exacta primero, luego con _ reemplazado por /
+        cur.execute("""
+            SELECT pdf_bytes, numero FROM stock_albaranes
+            WHERE numero = %s
+               OR numero = REPLACE(%s, '_', '/')
+               OR REPLACE(numero, '/', '_') = %s
+            LIMIT 1
+        """, (clave, clave, clave))
         row = cur.fetchone()
         cur.close(); conn.close()
         if not row or not row[0]:
