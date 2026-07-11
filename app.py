@@ -1171,6 +1171,15 @@ def webhook():
         msg.body(MENU_HERRAMIENTA)
         return str(resp) if not use_meta else ('OK', 200)
 
+    # ── Comando exclusivo supervisor: nueva herramienta <nombre> ─────────────
+    import re as _re_herr
+    if num_limpio == '34690875940' and _re_herr.match(r'^nueva herramienta\s+.+', msg_n_herr):
+        nombre_nueva = _re_herr.sub(r'^nueva herramienta\s+', '', msg_n_herr).strip()
+        set_dato(numero, 'herr_nueva_nombre', nombre_nueva)
+        set_paso(numero, 'herr_nueva_cantidad')
+        msg.body(f"🔧 *{nombre_nueva.capitalize()}*\n\n¿Cuántas unidades entran al almacén?")
+        return str(resp) if not use_meta else ('OK', 200)
+
     # ── Flujo activo de herramienta ───────────────────────────────────────────
     paso_herr = estado['paso'] if estado else None
 
@@ -1239,6 +1248,36 @@ def webhook():
         if ok:
             enviar_whatsapp(SUPERVISOR_WA,
                 f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}")
+        return str(resp) if not use_meta else ('OK', 200)
+
+    elif paso_herr == 'herr_nueva_cantidad':
+        datos_herr = estado.get('datos', {}) if estado else {}
+        nombre_nueva = datos_herr.get('herr_nueva_nombre', '')
+        try:
+            cantidad = int(incoming_msg.strip())
+            if cantidad <= 0:
+                raise ValueError
+        except ValueError:
+            msg.body("⚠️ Escribe un número válido de unidades.")
+            return str(resp) if not use_meta else ('OK', 200)
+        borrar_estado(numero)
+        # Insertar o sumar al stock
+        try:
+            _c = get_db(); _cur = _c.cursor()
+            _cur.execute("""
+                INSERT INTO herramienta (nombre, tipo, stock_almacen)
+                VALUES (%s, 'almacen', %s)
+                ON CONFLICT (nombre) DO UPDATE
+                  SET stock_almacen = herramienta.stock_almacen + EXCLUDED.stock_almacen
+                RETURNING stock_almacen
+            """, (nombre_nueva, cantidad))
+            stock_total = _cur.fetchone()[0]
+            _c.commit(); _cur.close(); _c.close()
+            msg.body(f"✅ *{nombre_nueva.capitalize()}* añadida al almacén.\n📦 Stock actual: {int(stock_total)} ud.")
+            enviar_whatsapp(SUPERVISOR_WA,
+                f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
+        except Exception as _e:
+            msg.body(f"❌ Error al guardar: {_e}")
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Almacén: Listado PDF de stock ─────────────────────────────────────────
