@@ -1127,6 +1127,35 @@ def webhook():
         )
         return str(resp) if not use_meta else ('OK', 200)
 
+    # ── Almacén: Listado PDF de stock ─────────────────────────────────────────
+    msg_n = normalizar(incoming_msg)
+    if msg_n.startswith('listado stock') or msg_n.startswith('pdf stock') or msg_n == 'listado':
+        import re as _re
+        familia_filtro = None
+        # Extraer familia si viene: "listado stock cables", "pdf stock tubos"
+        m_fam = _re.search(r'(?:listado stock|pdf stock|listado)\s+(.+)', msg_n)
+        if m_fam:
+            f_raw = m_fam.group(1).strip()
+            if f_raw and f_raw not in ['todo', 'todos', 'completo']:
+                familia_filtro = f_raw
+        import threading as _th
+        def _gen_listado():
+            try:
+                titulo = f"LISTADO STOCK — {familia_filtro.upper()}" if familia_filtro else "LISTADO COMPLETO DE STOCK"
+                pdf_bytes = generar_pdf_stock(titulo=titulo, familia_filtro=familia_filtro)
+                import hashlib as _hs
+                ts = datetime.now().strftime('%Y%m%d%H%M%S')
+                ref = f"STOCK-{ts}"
+                subir_pdf_albaran(pdf_bytes, ref)
+                pdf_url = f"https://bot-production-66b8.up.railway.app/albaran/{ref}.pdf"
+                texto = f"📊 *{titulo}*\n\nListado generado."
+                enviar_whatsapp(SUPERVISOR_WA, texto, media_url=pdf_url)
+            except Exception as e:
+                enviar_whatsapp(SUPERVISOR_WA, f"❌ Error generando listado: {e}")
+        _th.Thread(target=_gen_listado, daemon=True).start()
+        msg.body("⏳ Generando PDF de stock, te lo envío en un momento...")
+        return str(resp) if not use_meta else ('OK', 200)
+
     # ── Almacén: Salida ───────────────────────────────────────────────────────
     if normalizar(incoming_msg).strip() in MENSAJES_STOCK_SALIDA:
         num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
@@ -2926,6 +2955,17 @@ def init_stock_db():
                 END IF;
             END $$;
         """)
+        # Migración: añadir columna familia si no existe
+        cur.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='stock_materiales' AND column_name='familia'
+                ) THEN
+                    ALTER TABLE stock_materiales ADD COLUMN familia VARCHAR(100) DEFAULT 'General';
+                END IF;
+            END $$;
+        """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS stock_movimientos (
                 id SERIAL PRIMARY KEY,
@@ -3094,6 +3134,137 @@ def siguiente_numero_albaran():
 
 # ── PDF albarán interno ───────────────────────────────────────────────────────
 
+def generar_pdf_stock(titulo="LISTADO DE STOCK", familia_filtro=None):
+    """Genera un PDF con el listado de stock, agrupado por familia. Si familia_filtro se filtra por esa familia."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    import io as _io
+    from datetime import datetime as _dt
+
+    AZUL = colors.HexColor('#1a3a5c')
+    GRIS = colors.HexColor('#f5f5f5')
+    ROJO = colors.HexColor('#c0392b')
+
+    buffer = _io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=2*cm, bottomMargin=1.5*cm)
+    elements = []
+
+    # Estilos
+    titulo_style = ParagraphStyle('t', fontSize=16, textColor=AZUL, alignment=TA_CENTER,
+        fontName='Helvetica-Bold', spaceAfter=4)
+    sub_style   = ParagraphStyle('s', fontSize=9, textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)
+    sec_style   = ParagraphStyle('fam', fontSize=10, textColor=colors.white, backColor=AZUL,
+        fontName='Helvetica-Bold', spaceBefore=8, spaceAfter=2, borderPad=4)
+    pie_style   = ParagraphStyle('p', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+
+    fecha_str = _dt.now().strftime('%d/%m/%Y %H:%M')
+    filtro_txt = f" — Familia: {familia_filtro}" if familia_filtro else " — Todo el stock"
+    elements.append(Paragraph(titulo, titulo_style))
+    elements.append(Paragraph(f"Generado: {fecha_str}{filtro_txt}", sub_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=AZUL))
+    elements.append(Spacer(1, 0.3*cm))
+
+    # Obtener materiales de BD
+    try:
+        conn = get_db(); cur = conn.cursor()
+        if familia_filtro:
+            cur.execute("""
+                SELECT nombre, unidad, stock_actual, stock_minimo, precio_unitario,
+                       COALESCE(familia, 'General') as familia
+                FROM stock_materiales
+                WHERE LOWER(COALESCE(familia,'General')) = LOWER(%s) AND stock_actual >= 0
+                ORDER BY nombre
+            """, (familia_filtro,))
+        else:
+            cur.execute("""
+                SELECT nombre, unidad, stock_actual, stock_minimo, precio_unitario,
+                       COALESCE(familia, 'General') as familia
+                FROM stock_materiales
+                WHERE stock_actual >= 0
+                ORDER BY COALESCE(familia,'General'), nombre
+            """)
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+    except Exception as e:
+        rows = []
+
+    if not rows:
+        elements.append(Paragraph("No hay artículos en stock.", sub_style))
+    else:
+        # Agrupar por familia
+        from collections import OrderedDict
+        familias = OrderedDict()
+        for r in rows:
+            fam = r[5] or 'General'
+            if fam not in familias:
+                familias[fam] = []
+            familias[fam].append(r)
+
+        total_valorado = 0.0
+        for fam, arts in familias.items():
+            elements.append(Paragraph(f"  {fam.upper()}", sec_style))
+            filas = [['Artículo', 'Stock', 'Ud.', 'Mín.', 'P.Unit (€)', 'Valor (€)']]
+            subtotal_fam = 0.0
+            for art in arts:
+                nombre, unidad, stock, minimo, precio = art[0], art[1], float(art[2]), float(art[3]), float(art[4] or 0)
+                valor = stock * precio
+                subtotal_fam += valor
+                alerta = ' ⚠️' if stock <= minimo and minimo > 0 else ''
+                filas.append([
+                    nombre + alerta,
+                    fmt_cant(stock),
+                    unidad,
+                    fmt_cant(minimo) if minimo > 0 else '—',
+                    fmt_cant(precio) if precio > 0 else '—',
+                    fmt_cant(valor) if precio > 0 else '—',
+                ])
+            total_valorado += subtotal_fam
+            sub_txt = fmt_cant(subtotal_fam) + ' €' if subtotal_fam > 0 else '—'
+            filas.append(['', '', '', '', 'Subtotal', sub_txt])
+
+            col_w = [6.5*cm, 2*cm, 1.5*cm, 1.5*cm, 2.5*cm, 2.5*cm]
+            t = Table(filas, colWidths=col_w)
+            estilo = [
+                ('BACKGROUND',(0,0),(-1,0),AZUL),
+                ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                ('FONTSIZE',(0,0),(-1,-1),8),
+                ('GRID',(0,0),(-1,-1),0.3,colors.lightgrey),
+                ('PADDING',(0,0),(-1,-1),5),
+                ('ROWBACKGROUNDS',(0,1),(-1,-2),[colors.white, GRIS]),
+                ('ALIGN',(1,0),(-1,-1),'CENTER'),
+                ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+                ('BACKGROUND',(0,-1),(-1,-1),GRIS),
+            ]
+            t.setStyle(TableStyle(estilo))
+            elements.append(t)
+            elements.append(Spacer(1, 0.2*cm))
+
+        # Total general
+        elements.append(Spacer(1, 0.3*cm))
+        t_total = Table([['', '', '', '', 'TOTAL STOCK', fmt_cant(total_valorado) + ' €']], colWidths=[6.5*cm, 2*cm, 1.5*cm, 1.5*cm, 2.5*cm, 2.5*cm])
+        t_total.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,-1),AZUL),
+            ('TEXTCOLOR',(0,0),(-1,-1),colors.white),
+            ('FONTNAME',(0,0),(-1,-1),'Helvetica-Bold'),
+            ('FONTSIZE',(0,0),(-1,-1),10),
+            ('PADDING',(0,0),(-1,-1),7),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ]))
+        elements.append(t_total)
+
+    elements.append(Spacer(1, 0.5*cm))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+    elements.append(Paragraph(f"Generado el {fecha_str} — Instapalma · Almacén", pie_style))
+    doc.build(elements)
+    return buffer.getvalue()
+
+
 def generar_pdf_albaran(albaran):
     """albaran: dict con numero, nombre_operario, obra, lineas, fecha, tipo ('salida'|'devolucion')."""
     buffer = io.BytesIO()
@@ -3155,60 +3326,46 @@ def generar_pdf_albaran(albaran):
     elements.append(Spacer(1, 0.1*cm))
 
     lineas = albaran.get('lineas', [])
-    # Comprobar si alguna línea tiene precio
-    tiene_precios = any(float(l.get('precio', 0) or 0) > 0 for l in lineas)
     # Signo negativo en devoluciones
     signo = -1 if es_devol else 1
 
-    if tiene_precios:
-        filas = [['Material', 'Cantidad', 'Unidad', 'P. Unit. (€)', 'Total (€)']]
-        total_general = 0
-        for l in lineas:
-            cant = float(l.get('cantidad', 0) or 0) * signo
-            precio = float(l.get('precio', 0) or 0)
-            subtotal = cant * precio
-            total_general += subtotal
-            cant_str = ('-' if es_devol else '') + f"{abs(cant):.2f}".replace('.', ',')
-            precio_str = f"{precio:.2f}".replace('.', ',') if precio > 0 else '—'
-            subtotal_str = ('-' if es_devol else '') + f"{abs(subtotal):.2f}".replace('.', ',') if precio > 0 else '—'
-            filas.append([
-                l.get('material',''),
-                cant_str,
-                l.get('unidad',''),
-                precio_str,
-                subtotal_str
-            ])
-        total_str = ('-' if es_devol else '') + f"{abs(total_general):.2f}".replace('.', ',') + ' €'
-        filas.append(['', '', '', 'TOTAL', total_str])
-        col_widths = [7.5*cm, 2.5*cm, 2*cm, 3*cm, 2*cm]
-    else:
-        filas = [['Material', 'Cantidad', 'Unidad']]
-        for l in lineas:
-            cant = float(l.get('cantidad', 0) or 0) * signo
-            cant_str = ('-' if es_devol else '') + f"{abs(cant):.2f}".replace('.', ',')
-            filas.append([l.get('material',''), cant_str, l.get('unidad','')])
-        col_widths = [10*cm, 3.5*cm, 3.5*cm]
+    # Albarán SIEMPRE valorado
+    filas = [['Material', 'Cant.', 'Ud.', 'P.Unit (€)', 'Total (€)']]
+    total_general = 0
+    for l in lineas:
+        cant = float(l.get('cantidad', 0) or 0)
+        precio = float(l.get('precio', 0) or 0)
+        subtotal = cant * precio * signo
+        total_general += subtotal
+        cant_str = ('-' if es_devol else '') + fmt_cant(abs(cant))
+        precio_str = fmt_cant(precio) if precio > 0 else '—'
+        subtotal_str = ('-' if es_devol else '') + fmt_cant(abs(subtotal)) if precio > 0 else '—'
+        filas.append([
+            l.get('material',''),
+            cant_str,
+            l.get('unidad',''),
+            precio_str,
+            subtotal_str
+        ])
+    total_str = ('-' if es_devol else '') + fmt_cant(abs(total_general)) + ' €'
+    filas.append(['', '', '', 'TOTAL', total_str])
+    col_widths = [7.5*cm, 2.5*cm, 1.5*cm, 3*cm, 2.5*cm]
 
-    VERDE = colors.HexColor('#1a5c3a')
     t_lin = Table(filas, colWidths=col_widths)
     estilo_tabla = [
         ('BACKGROUND',(0,0),(-1,0),AZUL),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('FONTSIZE',(0,0),(-1,-1),10),
+        ('FONTSIZE',(0,0),(-1,-1),9),
         ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
-        ('PADDING',(0,0),(-1,-1),8),
-        ('ROWBACKGROUNDS',(0,1),(-1,-2 if tiene_precios else -1),[colors.white, GRIS]),
+        ('PADDING',(0,0),(-1,-1),7),
+        ('ROWBACKGROUNDS',(0,1),(-1,-2),[colors.white, GRIS]),
         ('ALIGN',(1,0),(-1,-1),'CENTER'),
+        ('BACKGROUND',(0,-1),(-1,-1),AZUL),
+        ('TEXTCOLOR',(0,-1),(-1,-1),colors.white),
+        ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
+        ('SPAN',(0,-1),(2,-1)),
     ]
-    if tiene_precios:
-        # Fila de total en negrita con fondo
-        estilo_tabla += [
-            ('BACKGROUND',(0,-1),(-1,-1),AZUL),
-            ('TEXTCOLOR',(0,-1),(-1,-1),colors.white),
-            ('FONTNAME',(0,-1),(-1,-1),'Helvetica-Bold'),
-            ('SPAN',(0,-1),(2,-1)),
-        ]
     t_lin.setStyle(TableStyle(estilo_tabla))
     elements.append(t_lin)
     elements.append(Spacer(1, 1*cm))
@@ -3433,27 +3590,28 @@ def editar_material(mid=None):
         stock  = float(req.form.get('stock_actual', 0) or 0)
         minimo = float(req.form.get('stock_minimo', 0) or 0)
         precio = float(req.form.get('precio_unitario', 0) or 0)
+        familia = req.form.get('familia', 'General').strip() or 'General'
         try:
             conn = get_db(); cur = conn.cursor()
             if mid:
-                cur.execute("UPDATE stock_materiales SET nombre=%s, unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, updated_at=NOW() WHERE id=%s",
-                    (nombre, unidad, stock, minimo, precio, mid))
+                cur.execute("UPDATE stock_materiales SET nombre=%s, unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, familia=%s, updated_at=NOW() WHERE id=%s",
+                    (nombre, unidad, stock, minimo, precio, familia, mid))
             else:
-                cur.execute("INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo, precio_unitario) VALUES (%s,%s,%s,%s,%s) ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, updated_at=NOW()",
-                    (nombre, unidad, stock, minimo, precio, unidad, stock, minimo, precio))
+                cur.execute("INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo, precio_unitario, familia) VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (nombre) DO UPDATE SET unidad=%s, stock_actual=%s, stock_minimo=%s, precio_unitario=%s, familia=%s, updated_at=NOW()",
+                    (nombre, unidad, stock, minimo, precio, familia, unidad, stock, minimo, precio, familia))
             conn.commit(); cur.close(); conn.close()
         except Exception as e:
             return f"Error: {e}", 500
         from flask import redirect
         return redirect('/almacen')
 
-    datos = {'nombre':'','unidad':'ud','stock_actual':0,'stock_minimo':0}
+    datos = {'nombre':'','unidad':'ud','stock_actual':0,'stock_minimo':0,'precio_unitario':0,'familia':'General'}
     if mid:
         try:
             conn = get_db(); cur = conn.cursor()
-            cur.execute("SELECT nombre, unidad, stock_actual, stock_minimo FROM stock_materiales WHERE id=%s", (mid,))
+            cur.execute("SELECT nombre, unidad, stock_actual, stock_minimo, precio_unitario, familia FROM stock_materiales WHERE id=%s", (mid,))
             r = cur.fetchone(); cur.close(); conn.close()
-            if r: datos = {'nombre':r[0],'unidad':r[1],'stock_actual':r[2],'stock_minimo':r[3]}
+            if r: datos = {'nombre':r[0],'unidad':r[1],'stock_actual':r[2],'stock_minimo':r[3],'precio_unitario':r[4] or 0,'familia':r[5] or 'General'}
         except: pass
     titulo = 'Editar material' if mid else 'Nuevo material'
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>{titulo}</title>
@@ -3464,9 +3622,11 @@ def editar_material(mid=None):
     <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
     <form method='POST'>
     <label>Nombre del material</label><input name='nombre' value='{datos["nombre"]}' required>
+    <label>Familia / Categoría</label><input name='familia' value='{datos["familia"]}' placeholder='Ej: Cables, Tubos, Herramientas...'>
     <label>Unidad (ud, m, ml, kg, rollo...)</label><input name='unidad' value='{datos["unidad"]}' required>
     <label>Stock actual</label><input name='stock_actual' type='number' step='0.001' value='{datos["stock_actual"]}' required>
     <label>Stock mínimo (alerta)</label><input name='stock_minimo' type='number' step='0.001' value='{datos["stock_minimo"]}'>
+    <label>Precio unitario (€)</label><input name='precio_unitario' type='number' step='0.0001' value='{datos["precio_unitario"]}'>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
     <div style='padding:0 30px'><a href='/almacen' class='back'>← Volver</a></div>
