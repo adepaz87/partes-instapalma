@@ -1359,71 +1359,112 @@ def webhook():
     if paso_herr == 'consulta_menu':
         op = msg_n_herr.strip()
         if op == '1':
-            # Consulta material de almacén (stock)
-            borrar_estado(numero)
-            set_paso(numero, 'stock_consulta')
-            msg.body("🔍 ¿Qué material quieres consultar?\n_Escribe el nombre o parte de él_")
+            # Stock Almacén → submenu buscar/PDF
+            set_paso(numero, 'consulta_stock_almacen')
+            msg.body(
+                "📦 *Stock Almacén*\n\n"
+                "1️⃣ Buscar por artículo\n"
+                "2️⃣ Listado completo en PDF"
+            )
             return str(resp) if not use_meta else ('OK', 200)
         elif op == '2':
-            # Consulta stock de herramienta — submenu todo/familia
-            set_paso(numero, 'herr_stock_menu')
-            msg.body(
-                "🔧 *Consulta stock de herramienta*\n\n"
-                "1️⃣ Todo el material\n"
-                "2️⃣ Por familia"
-            )
+            # Stock Herramienta → PDF directo
+            borrar_estado(numero)
+            try:
+                url = _enviar_pdf_herramienta('almacen')
+                msg.body(f"🔧 *Stock de herramienta:*\n{url}")
+            except Exception as e:
+                msg.body(f"❌ Error generando PDF: {e}")
             return str(resp) if not use_meta else ('OK', 200)
         else:
             msg.body(
                 "🔍 *CONSULTA*\n\n"
-                "1️⃣ Material de almacén\n"
-                "2️⃣ Stock de herramienta"
+                "1️⃣ Stock Almacén\n"
+                "2️⃣ Stock Herramienta"
             )
             return str(resp) if not use_meta else ('OK', 200)
 
-    # ── Paso: herr_stock_menu (todo / familia) ────────────────────────────────
-    if paso_herr == 'herr_stock_menu':
+    # ── Paso: consulta_stock_almacen (buscar artículo / PDF) ─────────────────
+    if paso_herr == 'consulta_stock_almacen':
         op = msg_n_herr.strip()
         if op == '1':
             borrar_estado(numero)
+            set_paso(numero, 'stock_consulta')
+            msg.body("🔍 ¿Qué artículo quieres consultar?\n_Escribe el nombre o parte de él_")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '2':
+            borrar_estado(numero)
             try:
-                url = _enviar_pdf_herramienta('almacen')
-                msg.body(f"📦 *Stock completo de almacén:*\n{url}")
+                from reportlab.lib.pagesizes import A4
+                from reportlab.lib import colors
+                from reportlab.lib.units import cm
+                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+                from reportlab.lib.styles import ParagraphStyle
+                from reportlab.lib.enums import TA_CENTER
+                import io as _io
+                from datetime import datetime as _dt
+                _c = get_db(); _cur = _c.cursor()
+                _cur.execute("""
+                    SELECT nombre, stock_almacen, observaciones
+                    FROM stock_materiales
+                    ORDER BY nombre
+                """)
+                rows = _cur.fetchall()
+                _cur.close(); _c.close()
+                AZUL = colors.HexColor('#1a3a5c')
+                GRIS = colors.HexColor('#f5f5f5')
+                buffer = _io.BytesIO()
+                doc = SimpleDocTemplate(buffer, pagesize=A4,
+                    rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+                elements = []
+                t_style = ParagraphStyle('T', fontSize=15, textColor=AZUL, fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=6)
+                pie_style = ParagraphStyle('P', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+                normal = ParagraphStyle('N', fontSize=9)
+                fecha_str = _dt.now().strftime('%d/%m/%Y %H:%M')
+                elements.append(Paragraph("INSTAPALMA — STOCK ALMACÉN ELÉCTRICO", t_style))
+                elements.append(Paragraph(f"Generado: {fecha_str}", ParagraphStyle('F', fontSize=8, textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)))
+                elements.append(Spacer(1, 0.3*cm))
+                if rows:
+                    filas = [['Artículo', 'Stock', 'Observaciones']]
+                    for r in rows:
+                        filas.append([r[0] or '', str(r[1]) if r[1] is not None else '0', r[2] or ''])
+                    t = Table(filas, colWidths=[9*cm, 2.5*cm, 5.5*cm])
+                    t.setStyle(TableStyle([
+                        ('BACKGROUND', (0,0), (-1,0), AZUL),
+                        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0,0), (-1,-1), 8),
+                        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+                        ('PADDING', (0,0), (-1,-1), 5),
+                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, GRIS]),
+                        ('ALIGN', (1,0), (1,-1), 'CENTER'),
+                    ]))
+                    elements.append(t)
+                else:
+                    elements.append(Paragraph("No hay artículos en el inventario.", normal))
+                elements.append(Spacer(1, 0.5*cm))
+                elements.append(Paragraph(f"Instapalma · {fecha_str}", pie_style))
+                doc.build(elements)
+                pdf_bytes = buffer.getvalue()
+                import uuid as _uuid
+                fname = f"stock_almacen_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{_uuid.uuid4().hex[:6]}.pdf"
+                fpath = os.path.join(PDF_DIR, fname)
+                with open(fpath, 'wb') as _f:
+                    _f.write(pdf_bytes)
+                url = f"https://bot-production-66b8.up.railway.app/albaran/{fname}"
+                msg.body(f"📦 *Listado completo de almacén:*\n{url}")
             except Exception as e:
                 msg.body(f"❌ Error generando PDF: {e}")
             return str(resp) if not use_meta else ('OK', 200)
-        elif op == '2':
-            # Calcular familias disponibles desde la BD
-            try:
-                _c = get_db(); _cur = _c.cursor()
-                _cur.execute("""
-                    SELECT DISTINCT
-                        LOWER(SPLIT_PART(nombre, ' ', 1)) AS familia
-                    FROM herramienta
-                    WHERE stock_almacen > 0
-                    ORDER BY 1
-                """)
-                familias = [r[0] for r in _cur.fetchall() if r[0]]
-                _cur.close(); _c.close()
-                if not familias:
-                    borrar_estado(numero)
-                    msg.body("⚠️ No hay herramienta con stock en almacén.")
-                    return str(resp) if not use_meta else ('OK', 200)
-                lineas = [f"{i+1}️⃣ {f.capitalize()}" for i, f in enumerate(familias[:15])]
-                set_dato(numero, 'herr_familias', familias)
-                set_paso(numero, 'herr_stock_familia')
-                msg.body("🗂️ *Familias disponibles:*\n\n" + "\n".join(lineas) + "\n\nEscribe el número o el nombre de la familia")
-            except Exception as e:
-                borrar_estado(numero)
-                msg.body(f"❌ Error: {e}")
-            return str(resp) if not use_meta else ('OK', 200)
         else:
             msg.body(
-                "🔧 *Consulta stock de herramienta*\n\n"
-                "1️⃣ Todo el material\n"
-                "2️⃣ Por familia"
+                "📦 *Stock Almacén*\n\n"
+                "1️⃣ Buscar por artículo\n"
+                "2️⃣ Listado completo en PDF"
             )
             return str(resp) if not use_meta else ('OK', 200)
+
+
 
     # ── Paso: herr_stock_familia (el usuario elige familia) ───────────────────
     if paso_herr == 'herr_stock_familia':
