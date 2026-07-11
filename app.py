@@ -3305,6 +3305,16 @@ def init_herramienta_db():
                 observaciones TEXT DEFAULT ''
             )
         """)
+        # Herramienta y EPIs asignados a operario (tabla unificada personal)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS herramienta_personal (
+                id SERIAL PRIMARY KEY,
+                propietario VARCHAR(150) NOT NULL,
+                articulo VARCHAR(300) NOT NULL,
+                tipo VARCHAR(20) DEFAULT 'herramienta',  -- herramienta | epi
+                fecha_alta TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit(); cur.close(); conn.close()
         print("Herramienta DB OK")
     except Exception as e:
