@@ -2901,6 +2901,25 @@ def admin_truncate():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/schema', methods=['GET'])
+def admin_schema():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name, column_name, data_type
+            FROM information_schema.columns
+            WHERE table_name IN ('herramienta','herramienta_obra','herramienta_personal','herramienta_epis','stock_materiales')
+            ORDER BY table_name, ordinal_position
+        """)
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        result = {}
+        for t, c, d in rows:
+            result.setdefault(t, []).append(f"{c} ({d})")
+        return result, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/migrate', methods=['GET'])
 def migrate():
     try:
