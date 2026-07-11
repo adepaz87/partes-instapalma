@@ -1642,34 +1642,72 @@ def webhook():
         sugerencia = datos_s.get('stock_retales_sugerencia', {})
         retales_disp = sugerencia.get('retales', [])
         try:
-            # Parsear selección: "1", "1,3", "2 y 3", o descripción textual "Tubo corrugado M20"
             import re as _re
-            nums_str = _re.findall(r'\b(\d+)\b', incoming_msg)
+            txt_orig = incoming_msg.strip()
+
+            # Detectar si viene con metros incluidos al final: "M20 15m", "1 20m"
+            metros_inline = None
+            patron_metros = _re.search(r'[,\s]+(\d+[.,]?\d*)\s*m(?:etros?)?\s*$', txt_orig, _re.IGNORECASE)
+            if patron_metros:
+                metros_inline = float(patron_metros.group(1).replace(',', '.'))
+                txt_busq = txt_orig[:patron_metros.start()].strip().upper()
+            else:
+                txt_busq = txt_orig.upper()
+
+            # Intentar selección por número de lista
+            seleccionados_idx = []
+            nums_str = _re.findall(r'\b(\d+)\b', txt_busq)
             seleccionados_idx = [int(n)-1 for n in nums_str if 0 < int(n) <= len(retales_disp)]
 
-            # Si no hay números válidos, intentar por descripción textual
+            # Si no, intentar por descripción textual
             if not seleccionados_idx:
-                txt_norm = incoming_msg.strip().upper()
                 for i, r in enumerate(retales_disp):
                     nombre_norm = r['nombre'].upper()
-                    # Coincidencia parcial: si el texto contiene palabras clave del nombre
                     palabras = [p for p in nombre_norm.split() if len(p) > 2]
-                    if any(p in txt_norm for p in palabras):
+                    if any(p in txt_busq for p in palabras):
                         seleccionados_idx.append(i)
 
             if not seleccionados_idx:
-                msg.body(f"Responde el *número* del retal (1-{len(retales_disp)}) o escribe parte del nombre. Ejemplo: *1* o *M20*")
+                lista_r = '\n'.join([f"  *{i+1}.* {r['nombre']} — {fmt_cant(r['metros'])} m" for i, r in enumerate(retales_disp)])
+                msg.body(f"No encontré ese retal. Disponibles:\n{lista_r}\n\nResponde el *número* o escribe parte del nombre (ej: *M20*).")
             elif len(seleccionados_idx) == 1:
-                # Un solo retal: preguntar cuántos metros coge
                 idx = seleccionados_idx[0]
                 r = retales_disp[idx]
-                set_dato(numero, 'stock_retal_elegido_idx', idx)
-                set_paso(numero, 'stock_salida_retales_metros_usar')
-                metros_disp = fmt_cant(r['metros'])
-                msg.body(
-                    f"📐 *{r['nombre']}* — {metros_disp} m disponibles\n\n"
-                    f"¿Cuántos metros necesitas?"
-                )
+                if metros_inline is not None:
+                    # Ya viene con metros en el mensaje → procesar directamente
+                    if metros_inline <= 0:
+                        msg.body("Los metros deben ser mayor que 0.")
+                    elif metros_inline > r['metros']:
+                        msg.body(
+                            f"⚠️ Solo hay *{fmt_cant(r['metros'])} m* de *{r['nombre']}*. "
+                            f"¿Cuántos metros necesitas? (máx. {fmt_cant(r['metros'])})"
+                        )
+                        set_dato(numero, 'stock_retal_elegido_idx', idx)
+                        set_paso(numero, 'stock_salida_retales_metros_usar')
+                    else:
+                        lineas = datos_s.get('stock_lineas', [])
+                        lineas.append({
+                            'material': r['nombre'],
+                            'cantidad': metros_inline,
+                            'unidad': r['unidad'],
+                            'material_id': r['id'],
+                            'delta_stock': -metros_inline,
+                            'precio': r.get('precio', 0)
+                        })
+                        set_dato(numero, 'stock_lineas', lineas)
+                        set_paso(numero, 'stock_salida_material')
+                        msg.body(
+                            f"✅ Añadido: *{r['nombre']}* — {fmt_cant(metros_inline)} m\n\n"
+                            f"¿Otro material? Escribe el nombre o di *listo* para terminar."
+                        )
+                else:
+                    # Preguntar metros
+                    set_dato(numero, 'stock_retal_elegido_idx', idx)
+                    set_paso(numero, 'stock_salida_retales_metros_usar')
+                    msg.body(
+                        f"📐 *{r['nombre']}* — {fmt_cant(r['metros'])} m disponibles\n\n"
+                        f"¿Cuántos metros necesitas?"
+                    )
             else:
                 # Varios retales: preguntar metros para cada uno secuencialmente
                 # Por ahora usar todos sus metros disponibles y añadir directamente
