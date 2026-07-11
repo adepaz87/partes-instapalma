@@ -1127,6 +1127,87 @@ def webhook():
         )
         return str(resp) if not use_meta else ('OK', 200)
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # HERRAMIENTA — Comandos: alta/baja en obra, listados PDF
+    # ══════════════════════════════════════════════════════════════════════════
+    import re as _re_herr
+    msg_n_herr = normalizar(incoming_msg)
+
+    # Comando: alta "escalera 4 peldaños" obra Sabino
+    m_alta = _re_herr.search(r'^alta\s+"([^"]+)"\s+obra\s+(.+)$', msg_n_herr)
+    if not m_alta:
+        m_alta = _re_herr.search(r'^alta\s+([^"]+?)\s+obra\s+(.+)$', msg_n_herr)
+    if m_alta:
+        nombre_herr = m_alta.group(1).strip()
+        obra_herr = m_alta.group(2).strip()
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_op = OPERARIOS.get(num_limpio, numero)
+        ok, respuesta = herramienta_alta_obra(nombre_herr, obra_herr, numero, nombre_op)
+        msg.body(respuesta)
+        if ok:
+            enviar_whatsapp(SUPERVISOR_WA, f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Comando: baja "escalera 4 peldaños" obra Sabino
+    m_baja = _re_herr.search(r'^baja\s+"([^"]+)"\s+obra\s+(.+)$', msg_n_herr)
+    if not m_baja:
+        m_baja = _re_herr.search(r'^baja\s+([^"]+?)\s+obra\s+(.+)$', msg_n_herr)
+    if not m_baja:
+        # Sin especificar obra
+        m_baja2 = _re_herr.search(r'^baja\s+"([^"]+)"$', msg_n_herr)
+        if not m_baja2:
+            m_baja2 = _re_herr.search(r'^baja\s+(.+)$', msg_n_herr)
+        if m_baja2 and not _re_herr.search(r'\bobra\b', msg_n_herr):
+            nombre_herr = m_baja2.group(1).strip()
+            num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+            nombre_op = OPERARIOS.get(num_limpio, numero)
+            ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
+            msg.body(respuesta)
+            if ok:
+                enviar_whatsapp(SUPERVISOR_WA, f"🔙 *Baja herramienta obra → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}")
+            return str(resp) if not use_meta else ('OK', 200)
+    if m_baja:
+        nombre_herr = m_baja.group(1).strip()
+        obra_herr = m_baja.group(2).strip()
+        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_op = OPERARIOS.get(num_limpio, numero)
+        ok, respuesta = herramienta_baja_obra(nombre_herr, obra_herr, numero, nombre_op)
+        msg.body(respuesta)
+        if ok:
+            enviar_whatsapp(SUPERVISOR_WA, f"🔙 *Baja herramienta obra → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Comandos listado herramienta
+    _cmd_herr = msg_n_herr.strip()
+    _seccion_herr = None
+    if _cmd_herr in ('herramienta almacen', 'herramienta almacén'):
+        _seccion_herr = 'almacen'
+    elif _cmd_herr in ('herramienta obra',):
+        _seccion_herr = 'obra'
+    elif _cmd_herr in ('herramienta personal',):
+        _seccion_herr = 'personal'
+    elif _cmd_herr in ('herramienta epis', 'herramienta épis', 'epis'):
+        _seccion_herr = 'epis'
+    elif _cmd_herr in ('herramienta todo', 'herramienta todos', 'herramienta completo', 'herramienta'):
+        _seccion_herr = 'todo'
+    if _seccion_herr:
+        import threading as _th_h
+        _sec = _seccion_herr
+        def _gen_herr_pdf():
+            try:
+                pdf_bytes = generar_pdf_herramienta(_sec)
+                ts = datetime.now().strftime('%Y%m%d%H%M%S')
+                ref = f"HERR-{_sec.upper()}-{ts}"
+                subir_pdf_albaran(pdf_bytes, ref)
+                pdf_url = f"https://bot-production-66b8.up.railway.app/albaran/{ref}.pdf"
+                titulos = {'almacen':'Almacén','obra':'En Obra','personal':'Personal','epis':'EPIs','todo':'Completo'}
+                enviar_whatsapp(SUPERVISOR_WA, f"🔧 *Herramienta — {titulos.get(_sec,'Listado')}*", media_url=pdf_url)
+            except Exception as e:
+                enviar_whatsapp(SUPERVISOR_WA, f"❌ Error generando PDF herramienta: {e}")
+        _th_h.Thread(target=_gen_herr_pdf, daemon=True).start()
+        msg.body("⏳ Generando PDF de herramienta, te lo envío enseguida...")
+        return str(resp) if not use_meta else ('OK', 200)
+
     # ── Almacén: Listado PDF de stock ─────────────────────────────────────────
     msg_n = normalizar(incoming_msg)
     if msg_n.startswith('listado stock') or msg_n.startswith('pdf stock') or msg_n == 'listado':
@@ -3013,7 +3094,305 @@ def init_stock_db():
 
 init_stock_db()
 
-def get_material_by_nombre(nombre):
+# ═══════════════════════════════════════════════════════════════════════════════
+# MÓDULO HERRAMIENTA — Control de herramienta, EPIs y asignaciones de obra
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def init_herramienta_db():
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        # Tabla maestra de herramienta
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS herramienta (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(200) UNIQUE NOT NULL,
+                tipo VARCHAR(30) DEFAULT 'general',  -- general | personal | epi
+                stock_almacen INTEGER DEFAULT 0,
+                propietario VARCHAR(100) DEFAULT NULL,  -- para tipo=personal
+                observaciones TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        # Herramienta en obra (asignaciones activas)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS herramienta_obra (
+                id SERIAL PRIMARY KEY,
+                herramienta_id INTEGER REFERENCES herramienta(id),
+                herramienta_nombre VARCHAR(200),
+                operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
+                obra VARCHAR(200),
+                fecha_alta TIMESTAMP DEFAULT NOW(),
+                fecha_baja TIMESTAMP DEFAULT NULL,
+                activo BOOLEAN DEFAULT TRUE
+            )
+        """)
+        # EPIs por persona
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS herramienta_epis (
+                id SERIAL PRIMARY KEY,
+                operario VARCHAR(100),
+                nombre_operario VARCHAR(100),
+                epi VARCHAR(200),
+                talla VARCHAR(30) DEFAULT '',
+                fecha_entrega DATE DEFAULT NOW(),
+                observaciones TEXT DEFAULT ''
+            )
+        """)
+        conn.commit(); cur.close(); conn.close()
+        print("Herramienta DB OK")
+    except Exception as e:
+        print(f"Error init_herramienta_db: {e}")
+        if conn:
+            try: conn.rollback()
+            except: pass
+
+init_herramienta_db()
+
+def buscar_herramienta(nombre_buscado):
+    """Busca herramienta por nombre (coincidencia parcial). Devuelve (id, nombre, tipo, stock_almacen) o None."""
+    import unicodedata as _ud
+    def _norm(t):
+        return ''.join(c for c in _ud.normalize('NFD', t.lower()) if _ud.category(c) != 'Mn')
+    nb = _norm(nombre_buscado)
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT id, nombre, tipo, stock_almacen, propietario FROM herramienta ORDER BY nombre")
+        rows = cur.fetchall(); cur.close(); conn.close()
+        # Primero exact match
+        for r in rows:
+            if _norm(r[1]) == nb:
+                return r
+        # Luego substring
+        for r in rows:
+            if nb in _norm(r[1]) or _norm(r[1]) in nb:
+                return r
+        return None
+    except Exception as e:
+        print(f"Error buscar_herramienta: {e}")
+        return None
+
+def herramienta_alta_obra(nombre_herr, obra, operario, nombre_op):
+    """Mueve 1 unidad de almacén → obra. Devuelve (ok, mensaje)."""
+    herr = buscar_herramienta(nombre_herr)
+    if not herr:
+        return False, f"❌ No encuentro *{nombre_herr}* en el inventario.\n_Escribe *herramienta almacen* para ver el listado._"
+    hid, hnombre, htipo, hstock, _ = herr
+    if htipo == 'personal':
+        return False, f"⚠️ *{hnombre}* es herramienta personal, no se puede asignar a obra desde aquí."
+    if hstock < 1:
+        return False, f"⚠️ No hay stock de *{hnombre}* en almacén (disponible: {hstock})."
+    try:
+        conn = get_db(); cur = conn.cursor()
+        # Descontar almacén
+        cur.execute("UPDATE herramienta SET stock_almacen = stock_almacen - 1, updated_at=NOW() WHERE id=%s", (hid,))
+        # Registrar en obra
+        cur.execute("""
+            INSERT INTO herramienta_obra (herramienta_id, herramienta_nombre, operario, nombre_operario, obra, activo)
+            VALUES (%s,%s,%s,%s,%s,TRUE)
+        """, (hid, hnombre, operario, nombre_op, obra))
+        conn.commit(); cur.close(); conn.close()
+        return True, f"✅ *{hnombre}* asignada a obra *{obra}*\nStock almacén: {hstock-1} ud."
+    except Exception as e:
+        return False, f"❌ Error: {e}"
+
+def herramienta_baja_obra(nombre_herr, obra, operario, nombre_op):
+    """Devuelve herramienta de obra → almacén. Devuelve (ok, mensaje)."""
+    herr = buscar_herramienta(nombre_herr)
+    if not herr:
+        return False, f"❌ No encuentro *{nombre_herr}* en el inventario."
+    hid, hnombre, htipo, hstock, _ = herr
+    try:
+        conn = get_db(); cur = conn.cursor()
+        # Buscar asignación activa (por herramienta y obra, o solo herramienta si obra no especificada)
+        if obra:
+            import unicodedata as _ud
+            def _norm(t): return ''.join(c for c in _ud.normalize('NFD', t.lower()) if _ud.category(c) != 'Mn')
+            cur.execute("""
+                SELECT id FROM herramienta_obra
+                WHERE herramienta_id=%s AND activo=TRUE AND LOWER(obra) LIKE %s
+                ORDER BY fecha_alta DESC LIMIT 1
+            """, (hid, f'%{_norm(obra)}%'))
+        else:
+            cur.execute("""
+                SELECT id FROM herramienta_obra
+                WHERE herramienta_id=%s AND activo=TRUE
+                ORDER BY fecha_alta DESC LIMIT 1
+            """, (hid,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return False, f"⚠️ No hay ninguna *{hnombre}* activa en obra *{obra or 'ninguna'}*."
+        # Cerrar asignación
+        cur.execute("UPDATE herramienta_obra SET activo=FALSE, fecha_baja=NOW() WHERE id=%s", (row[0],))
+        # Sumar al almacén
+        cur.execute("UPDATE herramienta SET stock_almacen = stock_almacen + 1, updated_at=NOW() WHERE id=%s", (hid,))
+        conn.commit(); cur.close(); conn.close()
+        return True, f"✅ *{hnombre}* devuelta de obra *{obra or ''}* al almacén\nStock almacén: {hstock+1} ud."
+    except Exception as e:
+        return False, f"❌ Error: {e}"
+
+def generar_pdf_herramienta(seccion='todo'):
+    """Genera PDF de herramienta. seccion: 'almacen'|'obra'|'personal'|'epis'|'todo'"""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    import io as _io
+    from datetime import datetime as _dt
+
+    AZUL = colors.HexColor('#1a3a5c')
+    GRIS = colors.HexColor('#f5f5f5')
+    NARANJA = colors.HexColor('#e67e22')
+    VERDE = colors.HexColor('#27ae60')
+
+    buffer = _io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+
+    titulo_style = ParagraphStyle('T', fontSize=16, textColor=AZUL, fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=4)
+    sec_style = ParagraphStyle('S', fontSize=10, textColor=colors.white, backColor=AZUL,
+        fontName='Helvetica-Bold', spaceAfter=2, spaceBefore=8, borderPad=4)
+    pie_style = ParagraphStyle('P', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+    normal = ParagraphStyle('N', fontSize=9)
+
+    fecha_str = _dt.now().strftime('%d/%m/%Y %H:%M')
+    titulos_map = {
+        'almacen': 'HERRAMIENTA EN ALMACÉN',
+        'obra': 'HERRAMIENTA EN OBRA',
+        'personal': 'HERRAMIENTA PERSONAL',
+        'epis': 'EPIs POR TRABAJADOR',
+        'todo': 'INVENTARIO COMPLETO DE HERRAMIENTA',
+    }
+    elements.append(Paragraph(f"INSTAPALMA — {titulos_map.get(seccion,'HERRAMIENTA')}", titulo_style))
+    elements.append(Paragraph(f"Generado: {fecha_str}", ParagraphStyle('f', fontSize=8, alignment=TA_CENTER, textColor=colors.grey)))
+    elements.append(Spacer(1, 0.4*cm))
+
+    try:
+        conn = get_db(); cur = conn.cursor()
+
+        # ── ALMACÉN ───────────────────────────────────────────────────────────
+        if seccion in ('almacen', 'todo'):
+            cur.execute("""
+                SELECT nombre, tipo, stock_almacen, observaciones
+                FROM herramienta WHERE tipo != 'personal'
+                ORDER BY tipo, nombre
+            """)
+            rows = cur.fetchall()
+            elements.append(Paragraph("📦 ALMACÉN", sec_style))
+            elements.append(Spacer(1, 0.1*cm))
+            if rows:
+                filas = [['Herramienta', 'Tipo', 'Stock', 'Obs.']]
+                for r in rows:
+                    filas.append([r[0], r[1].capitalize(), str(r[2]), r[3] or ''])
+                t = Table(filas, colWidths=[8*cm, 3*cm, 2*cm, 4*cm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),AZUL), ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'), ('FONTSIZE',(0,0),(-1,-1),8),
+                    ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey), ('PADDING',(0,0),(-1,-1),5),
+                    ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, GRIS]),
+                    ('ALIGN',(2,0),(2,-1),'CENTER'),
+                ]))
+                elements.append(t)
+            else:
+                elements.append(Paragraph("Sin herramienta en almacén.", normal))
+            elements.append(Spacer(1, 0.3*cm))
+
+        # ── EN OBRA ───────────────────────────────────────────────────────────
+        if seccion in ('obra', 'todo'):
+            cur.execute("""
+                SELECT herramienta_nombre, nombre_operario, obra, fecha_alta
+                FROM herramienta_obra WHERE activo=TRUE
+                ORDER BY obra, herramienta_nombre
+            """)
+            rows = cur.fetchall()
+            elements.append(Paragraph("🏗️ EN OBRA", sec_style))
+            elements.append(Spacer(1, 0.1*cm))
+            if rows:
+                filas = [['Herramienta', 'Operario', 'Obra', 'Desde']]
+                for r in rows:
+                    fecha = r[3].strftime('%d/%m/%Y') if r[3] else ''
+                    filas.append([r[0], r[1] or '', r[2] or '', fecha])
+                t = Table(filas, colWidths=[6*cm, 4*cm, 4*cm, 3*cm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),NARANJA), ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'), ('FONTSIZE',(0,0),(-1,-1),8),
+                    ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey), ('PADDING',(0,0),(-1,-1),5),
+                    ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, GRIS]),
+                ]))
+                elements.append(t)
+            else:
+                elements.append(Paragraph("No hay herramienta actualmente en obra.", normal))
+            elements.append(Spacer(1, 0.3*cm))
+
+        # ── PERSONAL ──────────────────────────────────────────────────────────
+        if seccion in ('personal', 'todo'):
+            cur.execute("""
+                SELECT nombre, propietario, observaciones
+                FROM herramienta WHERE tipo='personal'
+                ORDER BY propietario, nombre
+            """)
+            rows = cur.fetchall()
+            elements.append(Paragraph("👷 HERRAMIENTA PERSONAL", sec_style))
+            elements.append(Spacer(1, 0.1*cm))
+            if rows:
+                filas = [['Herramienta', 'Asignada a', 'Observaciones']]
+                for r in rows:
+                    filas.append([r[0], r[1] or '', r[2] or ''])
+                t = Table(filas, colWidths=[7*cm, 5*cm, 5*cm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),VERDE), ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'), ('FONTSIZE',(0,0),(-1,-1),8),
+                    ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey), ('PADDING',(0,0),(-1,-1),5),
+                    ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, GRIS]),
+                ]))
+                elements.append(t)
+            else:
+                elements.append(Paragraph("Sin registros de herramienta personal.", normal))
+            elements.append(Spacer(1, 0.3*cm))
+
+        # ── EPIs ──────────────────────────────────────────────────────────────
+        if seccion in ('epis', 'todo'):
+            cur.execute("""
+                SELECT nombre_operario, epi, talla, fecha_entrega, observaciones
+                FROM herramienta_epis
+                ORDER BY nombre_operario, epi
+            """)
+            rows = cur.fetchall()
+            elements.append(Paragraph("🦺 EPIs", sec_style))
+            elements.append(Spacer(1, 0.1*cm))
+            if rows:
+                filas = [['Trabajador', 'EPI', 'Talla', 'Entrega', 'Obs.']]
+                for r in rows:
+                    fecha = r[3].strftime('%d/%m/%Y') if r[3] else ''
+                    filas.append([r[0] or '', r[1], r[2] or '', fecha, r[4] or ''])
+                t = Table(filas, colWidths=[4.5*cm, 4*cm, 2*cm, 3*cm, 3.5*cm])
+                t.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#6c3483')), ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'), ('FONTSIZE',(0,0),(-1,-1),8),
+                    ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey), ('PADDING',(0,0),(-1,-1),5),
+                    ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, GRIS]),
+                ]))
+                elements.append(t)
+            else:
+                elements.append(Paragraph("Sin registros de EPIs.", normal))
+
+        cur.close(); conn.close()
+    except Exception as e:
+        elements.append(Paragraph(f"Error generando listado: {e}", normal))
+
+    elements.append(Spacer(1, 0.5*cm))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
+    elements.append(Paragraph(f"Instapalma · Control de Herramienta — {fecha_str}", pie_style))
+    doc.build(elements)
+    return buffer.getvalue()
+
+
     """Busca material por nombre exacto o aproximado. Devuelve (id, nombre, unidad, stock_actual, stock_minimo)."""
     import unicodedata as _ud
     def _norm(t):
@@ -3735,3 +4114,174 @@ def pdf_albaran(aid):
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WEB — Gestión de Herramienta /herramienta
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/herramienta')
+def web_herramienta():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id, nombre, tipo, stock_almacen, observaciones FROM herramienta ORDER BY tipo, nombre")
+    items = cur.fetchall()
+    cur.execute("""
+        SELECT ho.id, h.nombre, ho.operario_nombre, ho.obra, ho.fecha_alta
+        FROM herramienta_obra ho
+        JOIN herramienta h ON h.id = ho.herramienta_id
+        ORDER BY ho.fecha_alta DESC
+    """)
+    en_obra = cur.fetchall()
+    cur.execute("""
+        SELECT hp.id, h.nombre, hp.operario_nombre, hp.descripcion
+        FROM herramienta_personal hp
+        JOIN herramienta h ON h.id = hp.herramienta_id
+        ORDER BY hp.operario_nombre, h.nombre
+    """)
+    personal = cur.fetchall()
+    cur.close(); conn.close()
+
+    filas_almacen = "".join(
+        f"<tr><td>{i[1]}</td><td><span class='tag tag-{i[2].lower()}'>{i[2]}</span></td><td style='text-align:center'><b>{i[3]}</b></td><td>{i[4] or ''}</td>"
+        f"<td><a href='/herramienta/editar/{i[0]}'>✏️</a></td></tr>"
+        for i in items
+    )
+    filas_obra = "".join(
+        f"<tr><td>{o[1]}</td><td>{o[2] or ''}</td><td>{o[3]}</td><td>{str(o[4])[:10]}</td>"
+        f"<td><a href='/herramienta/baja_obra/{o[0]}' onclick='return confirm(\"¿Confirmar baja?\")'>🔙 Baja</a></td></tr>"
+        for o in en_obra
+    )
+    filas_pers = "".join(
+        f"<tr><td>{p[1]}</td><td>{p[2] or ''}</td><td>{p[3] or ''}</td></tr>"
+        for p in personal
+    )
+
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Herramienta — Instapalma</title>
+    <style>{CSS_BASE}
+    .tabs{{display:flex;gap:8px;margin:16px 0}}
+    .tab{{padding:8px 18px;border-radius:20px;background:#eee;cursor:pointer;font-weight:600;font-size:13px;border:none}}
+    .tab.active{{background:#1a3a5c;color:white}}
+    .section{{display:none}}.section.active{{display:block}}
+    table{{width:100%;border-collapse:collapse;font-size:13px}}
+    th{{background:#1a3a5c;color:white;padding:8px;text-align:left}}
+    td{{padding:7px 8px;border-bottom:1px solid #eee}}
+    tr:hover td{{background:#f5f7ff}}
+    .tag{{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700}}
+    .tag-almacen{{background:#d4f0d4;color:#1a5c1a}}
+    .tag-personal{{background:#d4e8f0;color:#1a3a5c}}
+    .tag-epis{{background:#f0ecd4;color:#5c4a1a}}
+    .btn-add{{background:#1a3a5c;color:white;padding:9px 20px;border-radius:8px;border:none;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:12px}}
+    </style>
+    <script>
+    function showTab(t){{document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));document.getElementById(t).classList.add('active');event.target.classList.add('active');}}
+    </script></head><body>
+    <header><div><h1>🔧 Herramienta</h1><p>Instapalma</p></div></header>
+    <div class='container'>
+    <div class='tabs'>
+      <button class='tab active' onclick='showTab("almacen")'>📦 Almacén ({len(items)})</button>
+      <button class='tab' onclick='showTab("obra")'>🏗️ En Obra ({len(en_obra)})</button>
+      <button class='tab' onclick='showTab("pers")'>👷 Personal ({len(personal)})</button>
+    </div>
+
+    <div id='almacen' class='section active'>
+      <a href='/herramienta/nuevo' class='btn-add'>+ Nueva herramienta</a>
+      <table><tr><th>Nombre</th><th>Tipo</th><th>Stock</th><th>Observaciones</th><th></th></tr>
+      {filas_almacen if filas_almacen else "<tr><td colspan='5' style='text-align:center;color:#999'>Sin herramienta registrada</td></tr>"}
+      </table>
+    </div>
+
+    <div id='obra' class='section'>
+      <table><tr><th>Herramienta</th><th>Operario</th><th>Obra</th><th>Fecha alta</th><th></th></tr>
+      {filas_obra if filas_obra else "<tr><td colspan='5' style='text-align:center;color:#999'>Nada en obra ahora mismo</td></tr>"}
+      </table>
+    </div>
+
+    <div id='pers' class='section'>
+      <table><tr><th>Herramienta / EPI</th><th>Operario</th><th>Descripción</th></tr>
+      {filas_pers if filas_pers else "<tr><td colspan='3' style='text-align:center;color:#999'>Sin asignaciones personales</td></tr>"}
+      </table>
+    </div>
+
+    <div style='margin-top:24px'>
+      <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/todo' class='btn-add' style='background:#2d7a2d'>📄 PDF completo</a>
+      <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/almacen' class='btn-add' style='background:#1a3a5c;margin-left:8px'>📦 PDF almacén</a>
+      <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/obra' class='btn-add' style='background:#5c3a1a;margin-left:8px'>🏗️ PDF obra</a>
+    </div>
+    </div></body></html>"""
+
+
+@app.route('/herramienta/nuevo', methods=['GET','POST'])
+@app.route('/herramienta/editar/<int:mid>', methods=['GET','POST'])
+def web_herramienta_form(mid=None):
+    from flask import request as req
+    if req.method == 'POST':
+        nombre  = req.form.get('nombre','').strip()
+        tipo    = req.form.get('tipo','almacen').strip()
+        stock   = int(req.form.get('stock_almacen', 1) or 1)
+        obs     = req.form.get('observaciones','').strip()
+        conn = get_db(); cur = conn.cursor()
+        if mid:
+            cur.execute("UPDATE herramienta SET nombre=%s, tipo=%s, stock_almacen=%s, observaciones=%s, updated_at=NOW() WHERE id=%s",
+                (nombre, tipo, stock, obs, mid))
+        else:
+            cur.execute("INSERT INTO herramienta (nombre, tipo, stock_almacen, observaciones) VALUES (%s,%s,%s,%s) ON CONFLICT (nombre) DO UPDATE SET tipo=%s, stock_almacen=%s, observaciones=%s, updated_at=NOW()",
+                (nombre, tipo, stock, obs, tipo, stock, obs))
+        conn.commit(); cur.close(); conn.close()
+        from flask import redirect
+        return redirect('/herramienta')
+
+    datos = {'nombre':'','tipo':'almacen','stock_almacen':1,'observaciones':''}
+    if mid:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT nombre, tipo, stock_almacen, observaciones FROM herramienta WHERE id=%s", (mid,))
+        r = cur.fetchone(); cur.close(); conn.close()
+        if r: datos = {'nombre':r[0],'tipo':r[1],'stock_almacen':r[2],'observaciones':r[3] or ''}
+    titulo = 'Editar herramienta' if mid else 'Nueva herramienta'
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>{titulo}</title>
+    <style>{CSS_BASE} label{{display:block;margin:12px 0 4px;font-size:13px;font-weight:600;color:#555}}
+    input,select,textarea{{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box}}
+    .btn{{background:#1a3a5c;color:white;padding:12px 28px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-top:16px}}</style></head><body>
+    <header><div><h1>🔧 {titulo}</h1><p>Instapalma</p></div></header>
+    <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
+    <form method='POST'>
+    <label>Nombre</label><input name='nombre' value='{datos["nombre"]}' required>
+    <label>Tipo</label>
+    <select name='tipo'>
+      <option value='almacen' {'selected' if datos["tipo"]=='almacen' else ''}>📦 Almacén (compartida)</option>
+      <option value='personal' {'selected' if datos["tipo"]=='personal' else ''}>👷 Personal</option>
+      <option value='epis' {'selected' if datos["tipo"]=='epis' else ''}>🦺 EPIs</option>
+    </select>
+    <label>Unidades en almacén</label><input name='stock_almacen' type='number' value='{datos["stock_almacen"]}' min='0'>
+    <label>Observaciones</label><textarea name='observaciones' rows='3'>{datos["observaciones"]}</textarea>
+    <button class='btn' type='submit'>Guardar</button>
+    </form></div>
+    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Volver</a></div></body></html>"""
+
+
+@app.route('/herramienta/baja_obra/<int:oid>')
+def web_baja_obra(oid):
+    """Devuelve la herramienta al almacén desde la web."""
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT herramienta_id FROM herramienta_obra WHERE id=%s", (oid,))
+        row = cur.fetchone()
+        if row:
+            cur.execute("UPDATE herramienta SET stock_almacen = stock_almacen + 1, updated_at=NOW() WHERE id=%s", (row[0],))
+            cur.execute("DELETE FROM herramienta_obra WHERE id=%s", (oid,))
+            conn.commit()
+        cur.close(); conn.close()
+    except Exception as e:
+        print(f"Error baja_obra web: {e}")
+    from flask import redirect
+    return redirect('/herramienta')
+
+
+@app.route('/herramienta/pdf/<modo>')
+def web_herramienta_pdf(modo):
+    """Genera y sirve PDF de herramienta: todo/almacen/obra/personal."""
+    try:
+        pdf_bytes = generar_pdf_herramienta(modo)
+        from flask import Response
+        return Response(pdf_bytes, mimetype='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="herramienta_{modo}.pdf"'})
+    except Exception as e:
+        return f"Error: {e}", 500
