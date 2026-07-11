@@ -1405,9 +1405,9 @@ def webhook():
                 from datetime import datetime as _dt
                 _c = get_db(); _cur = _c.cursor()
                 _cur.execute("""
-                    SELECT nombre, stock_almacen, observaciones
+                    SELECT nombre, stock_actual, unidad, familia
                     FROM stock_materiales
-                    ORDER BY nombre
+                    ORDER BY familia, nombre
                 """)
                 rows = _cur.fetchall()
                 _cur.close(); _c.close()
@@ -1425,10 +1425,10 @@ def webhook():
                 elements.append(Paragraph(f"Generado: {fecha_str}", ParagraphStyle('F', fontSize=8, textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)))
                 elements.append(Spacer(1, 0.3*cm))
                 if rows:
-                    filas = [['Artículo', 'Stock', 'Observaciones']]
+                    filas = [['Artículo', 'Familia', 'Stock', 'Ud.']]
                     for r in rows:
-                        filas.append([r[0] or '', str(r[1]) if r[1] is not None else '0', r[2] or ''])
-                    t = Table(filas, colWidths=[9*cm, 2.5*cm, 5.5*cm])
+                        filas.append([r[0] or '', r[3] or '', str(r[1]) if r[1] is not None else '0', r[2] or ''])
+                    t = Table(filas, colWidths=[8*cm, 3*cm, 2*cm, 2*cm])
                     t.setStyle(TableStyle([
                         ('BACKGROUND', (0,0), (-1,0), AZUL),
                         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
