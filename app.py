@@ -1601,22 +1601,22 @@ def webhook():
                 mat, err = buscar_material_msg(incoming_msg)
             if err:
                 if isinstance(err, tuple) and err[0] == 'RETALES':
-                    # Es un grupo de retales — preguntar metros necesarios
+                    # Es un grupo de retales — mostrar lista y elegir directamente
                     candidatos = err[1]
-                    # Convertir Decimals a float para serialización JSON
                     candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4])] for c in candidatos]
                     set_dato(numero, 'stock_retales_candidatos', candidatos_serial)
                     set_dato(numero, 'stock_mat_busqueda', incoming_msg)
-                    set_paso(numero, 'stock_salida_retales_metros')
-                    # Calcular total real extrayendo metros del nombre
+                    # Construir sugerencia con todos los metros disponibles
                     sugerencia_previa = sugerir_retales(candidatos, 9999)
+                    set_dato(numero, 'stock_retales_sugerencia', sugerencia_previa)
+                    set_paso(numero, 'stock_salida_retales_elegir')
                     retales_info = sugerencia_previa['retales']
                     total_m = sugerencia_previa['total_disponible']
-                    lista_r = '\n'.join([f"  *{i}.* {r['nombre']} — {r['metros']} m" for i, r in enumerate(retales_info, 1)])
+                    lista_r = '\n'.join([f"  *{i}.* {r['nombre']} — {fmt_cant(r['metros'])} m" for i, r in enumerate(retales_info, 1)])
                     msg.body(
                         f"📏 *Retales disponibles de {incoming_msg}:*\n{lista_r}\n"
-                        f"Total: *{total_m} m*\n\n"
-                        f"¿Cuántos metros necesitas?"
+                        f"Total: *{fmt_cant(total_m)} m*\n\n"
+                        f"¿Cuál coges? Responde el *número* o el nombre."
                     )
                 elif isinstance(err, tuple) and err[0] == 'MULTIPLES':
                     candidatos = err[1]
@@ -1636,54 +1636,6 @@ def webhook():
                     f"Stock disponible: *{mat[3]} {mat[2]}*\n\n"
                     f"¿Qué *cantidad* retiras?"
                 )
-
-    elif paso == 'stock_salida_retales_metros':
-        try:
-            import re as _re
-            # Aceptar número puro o extraerlo de texto como "TUBO M20 - 20m" → 20
-            txt_m = incoming_msg.strip().replace(',','.')
-            try:
-                metros_necesarios = float(txt_m)
-            except:
-                nums_encontrados = _re.findall(r'\b(\d+(?:\.\d+)?)\s*m?\b', txt_m)
-                if nums_encontrados:
-                    metros_necesarios = float(nums_encontrados[-1])
-                else:
-                    raise ValueError("sin número")
-            if metros_necesarios <= 0:
-                msg.body("Los metros deben ser mayor que 0.")
-            else:
-                datos_s = get_estado(numero)['datos']
-                candidatos = [tuple(c) for c in datos_s.get('stock_retales_candidatos', [])]
-                sugerencia = sugerir_retales(candidatos, metros_necesarios)
-                set_dato(numero, 'stock_retales_sugerencia', sugerencia)
-                set_dato(numero, 'stock_retales_metros', metros_necesarios)
-
-                if sugerencia['total_disponible'] < metros_necesarios:
-                    msg.body(
-                        f"⚠️ Solo hay *{sugerencia['total_disponible']} m* disponibles en total "
-                        f"y necesitas *{metros_necesarios} m*. Stock insuficiente.\n\n"
-                        f"¿Otro material? Escribe el nombre o di *listo*."
-                    )
-                    set_paso(numero, 'stock_salida_material')
-                else:
-                    set_paso(numero, 'stock_salida_retales_elegir')
-                    texto = f"📐 Necesitas *{metros_necesarios} m*. Retales disponibles:\n\n"
-                    for i, r in enumerate(sugerencia['retales'], 1):
-                        suficiente = ' ✅' if r['metros'] >= metros_necesarios else ''
-                        texto += f"*{i}.* {r['nombre']} — {r['metros']} m{suficiente}\n"
-                    texto += "\n"
-                    if sugerencia['individuales']:
-                        mejor = sugerencia['individuales'][0]
-                        texto += f"💡 *Sugerencia:* Retal {sugerencia['retales'].index(mejor)+1} ({mejor['metros']} m) cubre solo.\n"
-                    elif sugerencia['combinacion']:
-                        nums = [sugerencia['retales'].index(r)+1 for r in sugerencia['combinacion']]
-                        total = sum(r['metros'] for r in sugerencia['combinacion'])
-                        texto += f"💡 *Sugerencia:* Retales {'+'.join(map(str,nums))} = {total} m (combinación óptima).\n"
-                    texto += "\nResponde el *número* del retal que coges, o varios separados por coma (ej: *1,3*)."
-                    msg.body(texto)
-        except:
-            msg.body("Escribe solo el número de metros. Ejemplo: *10* o *5.5*")
 
     elif paso == 'stock_salida_retales_elegir':
         datos_s = get_estado(numero)['datos']
