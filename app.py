@@ -2967,6 +2967,19 @@ def admin_stock_materiales():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/herr-debug', methods=['GET'])
+def admin_herr_debug():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT nombre, tipo, stock_almacen FROM herramienta ORDER BY nombre")
+        stock = [{'nombre': r[0], 'tipo': r[1], 'stock_almacen': r[2]} for r in cur.fetchall()]
+        cur.execute("SELECT herramienta_nombre, obra, nombre_operario, activo, fecha_alta FROM herramienta_obra ORDER BY fecha_alta DESC LIMIT 30")
+        obra = [{'herramienta': r[0], 'obra': r[1], 'operario': r[2], 'activo': r[3], 'fecha': str(r[4])} for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'stock': stock, 'obra': obra}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/albaranes-lista', methods=['GET'])
 def admin_albaranes_lista():
     try:
