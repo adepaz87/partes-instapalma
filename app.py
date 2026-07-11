@@ -2217,37 +2217,6 @@ def descargar_pdf(parte_id):
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
-@app.route('/partes/<int:parte_id>/pdf', methods=['GET'])
-def descargar_pdf(parte_id):
-    r = get_parte_by_id(parte_id)
-    if not r:
-        return "Parte no encontrado", 404
-    datos = {
-        'numero_parte': r[1], 'fecha': r[2], 'cliente': r[4], 'obra': r[5],
-        'operarios': r[6] or '', 'albaranes': r[7] or '', 'material_stock': r[8] or '',
-        'devolucion_almacen': r[9] or 'Ninguno',
-        'descripcion': r[10] or '', 'terminado': r[11] or '', 'tiempo_restante': r[12] or ''
-    }
-    pdf_bytes = generar_pdf(datos)
-    fecha_pdf2 = (r[2] or '').replace('/', '-').replace(' ', '')
-    obra_pdf2 = limpiar_nombre_archivo(r[5] or 'obra')
-    ops_raw2 = r[6] or ''
-    ops_lista2 = [limpiar_nombre_archivo(l.split('—')[0].split('-')[0].strip().split()[0]) for l in ops_raw2.split('\n') if l.strip()]
-    ops_pdf2 = '-'.join(ops_lista2) if ops_lista2 else 'OPERARIOS'
-    nombre = f"{fecha_pdf2}-{obra_pdf2}-{ops_pdf2}.pdf"
-    # Marcar como descargado
-    try:
-        from datetime import datetime as dt
-        conn2 = get_db(); cur2 = conn2.cursor()
-        cur2.execute("UPDATE partes SET pdf_descargado=TRUE, pdf_descargado_at=%s WHERE id=%s",
-                    (dt.utcnow(), parte_id))
-        conn2.commit(); cur2.close(); conn2.close()
-    except Exception:
-        pass
-    from flask import Response
-    return Response(pdf_bytes, mimetype='application/pdf',
-        headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
-
 @app.route('/albaran/<numero_pdf>', methods=['GET'])
 def servir_albaran_pdf(numero_pdf):
     """Sirve el PDF de un albarán almacenado en BD."""
