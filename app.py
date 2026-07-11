@@ -2579,6 +2579,29 @@ def admin_carga_almacen_herramienta():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/carga-personal-herramienta', methods=['POST'])
+def admin_carga_personal_herramienta():
+    """Carga herramienta personal. Body: lista de {propietario, articulo, tipo}
+    tipo: 'herramienta' | 'epi'
+    """
+    try:
+        items = request.get_json()
+        conn = get_db(); cur = conn.cursor()
+        insertadas = 0
+        for item in items:
+            propietario = item['propietario']
+            articulo    = item['articulo']
+            tipo        = item.get('tipo', 'herramienta').lower()
+            cur.execute("""
+                INSERT INTO herramienta_personal (propietario, articulo, tipo, fecha_alta)
+                VALUES (%s, %s, %s, NOW())
+            """, (propietario, articulo, tipo))
+            insertadas += 1
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'insertadas': insertadas}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/carga-herramienta', methods=['POST'])
 def admin_carga_herramienta():
     """Carga masiva de herramienta. Body: lista de {nombre, obra, responsable, fecha_alta, cantidad}"""
