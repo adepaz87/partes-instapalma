@@ -28,6 +28,15 @@ from reportlab.lib.enums import TA_CENTER
 
 app = Flask(__name__)
 
+def fmt_cant(v):
+    """Formatea cantidad con coma decimal y 2 decimales. Ej: 2.0 → '2,00'"""
+    try:
+        f = float(v)
+        return f"{f:.2f}".replace(".", ",")
+    except:
+        return str(v)
+
+
 # ── Base de datos ──────────────────────────────────────────────────────────────
 def get_db():
     return psycopg2.connect(os.environ.get('DATABASE_URL', ''))
@@ -1161,7 +1170,7 @@ def webhook():
                     lineas = []
                     for c in candidatos:
                         precio = float(c[5]) if len(c) > 5 and c[5] else 0
-                        precio_txt = f" — {precio:.2f} €/ud" if precio > 0 else ""
+                        precio_txt = f" — {precio:.2f} €/ud".replace(".",",") if precio > 0 else ""
                         lineas.append(f"• *{c[1]}*: {c[3]} {c[2]}{precio_txt}")
                     msg.body("🔍 *Resultados encontrados:*\n\n" + "\n".join(lineas))
                 else:
@@ -1564,7 +1573,7 @@ def webhook():
                 msg.body("No has añadido ningún material. Dime qué material retiras.")
             else:
                 set_paso(numero, 'stock_salida_confirmar')
-                resumen = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                resumen = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
                 msg.body(
                     f"📤 *RESUMEN SALIDA*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1752,7 +1761,7 @@ def webhook():
                 pdf_url = subir_pdf_albaran(pdf_bytes, numero_alb)
                 # Enviar al operario
                 op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
-                resumen_txt = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                resumen_txt = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
                 texto = (
                     f"✅ *Albarán {numero_alb}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1782,7 +1791,7 @@ def webhook():
                 msg.body("No has añadido ningún material. Dime qué devuelves.")
             else:
                 set_paso(numero, 'stock_devol_confirmar')
-                resumen = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                resumen = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
                 msg.body(
                     f"📥 *RESUMEN DEVOLUCIÓN*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1897,7 +1906,7 @@ def webhook():
                 })
                 pdf_url = subir_pdf_albaran(pdf_bytes, numero_alb)
                 op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
-                resumen_txt = '\n'.join([f"• {l['material']} — {l['cantidad']} {l['unidad']}" for l in lineas])
+                resumen_txt = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
                 texto = (
                     f"✅ *Albarán devolución {numero_alb}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1926,7 +1935,7 @@ def webhook():
                 lineas = []
                 for c in candidatos:
                     precio = float(c[5]) if len(c) > 5 and c[5] else 0
-                    precio_txt = f" — {precio:.2f} €/ud" if precio > 0 else ""
+                    precio_txt = f" — {precio:.2f} €/ud".replace(".",",") if precio > 0 else ""
                     lineas.append(f"• *{c[1]}*: {c[3]} {c[2]}{precio_txt}")
                 msg.body("🔍 *Resultados encontrados:*\n\n" + "\n".join(lineas) + "\n\nEscribe el nombre más completo para más detalle.")
             # Varios resultados normales (ya formateados como string)
@@ -3081,20 +3090,25 @@ def generar_pdf_albaran(albaran):
             precio = float(l.get('precio', 0) or 0)
             subtotal = cant * precio
             total_general += subtotal
+            cant_str = ('-' if es_devol else '') + f"{abs(cant):.2f}".replace('.', ',')
+            precio_str = f"{precio:.2f}".replace('.', ',') if precio > 0 else '—'
+            subtotal_str = ('-' if es_devol else '') + f"{abs(subtotal):.2f}".replace('.', ',') if precio > 0 else '—'
             filas.append([
                 l.get('material',''),
-                f"{cant:+g}" if es_devol else f"{cant:g}",
+                cant_str,
                 l.get('unidad',''),
-                f"{precio:.2f}" if precio > 0 else '—',
-                f"{subtotal:+.2f}" if precio > 0 else '—'
+                precio_str,
+                subtotal_str
             ])
-        filas.append(['', '', '', 'TOTAL', f"{total_general:+.2f} €" if es_devol else f"{total_general:.2f} €"])
+        total_str = ('-' if es_devol else '') + f"{abs(total_general):.2f}".replace('.', ',') + ' €'
+        filas.append(['', '', '', 'TOTAL', total_str])
         col_widths = [7.5*cm, 2.5*cm, 2*cm, 3*cm, 2*cm]
     else:
         filas = [['Material', 'Cantidad', 'Unidad']]
         for l in lineas:
             cant = float(l.get('cantidad', 0) or 0) * signo
-            filas.append([l.get('material',''), f"{cant:+g}" if es_devol else f"{cant:g}", l.get('unidad','')])
+            cant_str = ('-' if es_devol else '') + f"{abs(cant):.2f}".replace('.', ',')
+            filas.append([l.get('material',''), cant_str, l.get('unidad','')])
         col_widths = [10*cm, 3.5*cm, 3.5*cm]
 
     VERDE = colors.HexColor('#1a5c3a')
