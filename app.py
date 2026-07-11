@@ -1128,84 +1128,117 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # HERRAMIENTA — Comandos: alta/baja en obra, listados PDF
+    # HERRAMIENTA — Flujo conversacional
     # ══════════════════════════════════════════════════════════════════════════
-    import re as _re_herr
     msg_n_herr = normalizar(incoming_msg)
+    num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
+    nombre_op = OPERARIOS.get(num_limpio, numero)
 
-    # Comando: alta "escalera 4 peldaños" obra Sabino
-    m_alta = _re_herr.search(r'^alta\s+"([^"]+)"\s+obra\s+(.+)$', msg_n_herr)
-    if not m_alta:
-        m_alta = _re_herr.search(r'^alta\s+([^"]+?)\s+obra\s+(.+)$', msg_n_herr)
-    if m_alta:
-        nombre_herr = m_alta.group(1).strip()
-        obra_herr = m_alta.group(2).strip()
-        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
-        nombre_op = OPERARIOS.get(num_limpio, numero)
+    BOT_URL_H = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
+
+    def _enviar_pdf_herramienta(seccion):
+        """Genera PDF, lo guarda en BD y devuelve la URL pública."""
+        import time
+        pdf_bytes = generar_pdf_herramienta(seccion)
+        ts = int(time.time())
+        ref = f"HERR-{seccion.upper()}-{ts}"
+        # Guardar en BD (reutiliza tabla stock_albaranes con numero=ref)
+        try:
+            _c = get_db(); _cur = _c.cursor()
+            _cur.execute("""
+                INSERT INTO stock_albaranes (numero, pdf_bytes)
+                VALUES (%s, %s)
+                ON CONFLICT (numero) DO UPDATE SET pdf_bytes=%s
+            """, (ref, psycopg2.Binary(pdf_bytes), psycopg2.Binary(pdf_bytes)))
+            _c.commit(); _cur.close(); _c.close()
+        except Exception as _e:
+            print(f"Error guardando PDF herramienta: {_e}")
+        return f"https://{BOT_URL_H}/albaran/{ref}.pdf"
+
+    MENU_HERRAMIENTA = (
+        "🔧 *Control de Herramienta*\n\n"
+        "¿Qué quieres hacer?\n\n"
+        "1️⃣ Alta en obra\n"
+        "2️⃣ Baja / devolución a almacén\n"
+        "3️⃣ Listado almacén (PDF)\n"
+        "4️⃣ Listado en obra (PDF)\n"
+        "5️⃣ Listado personal (PDF)"
+    )
+
+    # ── Arranque: palabra "herramienta" ───────────────────────────────────────
+    if msg_n_herr.strip() == 'herramienta':
+        set_paso(numero, 'herr_menu')
+        msg.body(MENU_HERRAMIENTA)
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Flujo activo de herramienta ───────────────────────────────────────────
+    paso_herr = estado['paso'] if estado else None
+
+    if paso_herr == 'herr_menu':
+        op = msg_n_herr.strip()
+        if op == '1':
+            set_paso(numero, 'herr_alta_nombre')
+            msg.body("🔧 *Alta en obra*\n\n¿Qué herramienta vas a sacar?\n_(Escribe el nombre, ej: escalera 4 peldaños)_")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '2':
+            set_paso(numero, 'herr_baja_nombre')
+            msg.body("🔙 *Devolución a almacén*\n\n¿Qué herramienta devuelves?\n_(Escribe el nombre)_")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '3':
+            borrar_estado(numero)
+            try:
+                url = _enviar_pdf_herramienta('almacen')
+                msg.body(f"📋 *Listado Almacén:*\n{url}")
+            except Exception as e:
+                msg.body(f"❌ Error generando PDF: {e}")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '4':
+            borrar_estado(numero)
+            try:
+                url = _enviar_pdf_herramienta('obra')
+                msg.body(f"📋 *Herramienta en Obra:*\n{url}")
+            except Exception as e:
+                msg.body(f"❌ Error generando PDF: {e}")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '5':
+            borrar_estado(numero)
+            try:
+                url = _enviar_pdf_herramienta('personal')
+                msg.body(f"📋 *Herramienta Personal:*\n{url}")
+            except Exception as e:
+                msg.body(f"❌ Error generando PDF: {e}")
+            return str(resp) if not use_meta else ('OK', 200)
+        else:
+            msg.body(MENU_HERRAMIENTA)
+            return str(resp) if not use_meta else ('OK', 200)
+
+    elif paso_herr == 'herr_alta_nombre':
+        set_dato(numero, 'herr_nombre', incoming_msg.strip())
+        set_paso(numero, 'herr_alta_obra')
+        msg.body(f"📍 ¿En qué obra o lugar se va a usar?\n_(Escribe el nombre de la obra)_")
+        return str(resp) if not use_meta else ('OK', 200)
+
+    elif paso_herr == 'herr_alta_obra':
+        datos_herr = estado.get('datos', {}) if estado else {}
+        nombre_herr = datos_herr.get('herr_nombre', incoming_msg.strip())
+        obra_herr = incoming_msg.strip()
+        borrar_estado(numero)
         ok, respuesta = herramienta_alta_obra(nombre_herr, obra_herr, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            enviar_whatsapp(SUPERVISOR_WA, f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
+            enviar_whatsapp(SUPERVISOR_WA,
+                f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
-    # Comando: baja "escalera 4 peldaños" obra Sabino
-    m_baja = _re_herr.search(r'^baja\s+"([^"]+)"\s+obra\s+(.+)$', msg_n_herr)
-    if not m_baja:
-        m_baja = _re_herr.search(r'^baja\s+([^"]+?)\s+obra\s+(.+)$', msg_n_herr)
-    if not m_baja:
-        # Sin especificar obra
-        m_baja2 = _re_herr.search(r'^baja\s+"([^"]+)"$', msg_n_herr)
-        if not m_baja2:
-            m_baja2 = _re_herr.search(r'^baja\s+(.+)$', msg_n_herr)
-        if m_baja2 and not _re_herr.search(r'\bobra\b', msg_n_herr):
-            nombre_herr = m_baja2.group(1).strip()
-            num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
-            nombre_op = OPERARIOS.get(num_limpio, numero)
-            ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
-            msg.body(respuesta)
-            if ok:
-                enviar_whatsapp(SUPERVISOR_WA, f"🔙 *Baja herramienta obra → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}")
-            return str(resp) if not use_meta else ('OK', 200)
-    if m_baja:
-        nombre_herr = m_baja.group(1).strip()
-        obra_herr = m_baja.group(2).strip()
-        num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
-        nombre_op = OPERARIOS.get(num_limpio, numero)
-        ok, respuesta = herramienta_baja_obra(nombre_herr, obra_herr, numero, nombre_op)
+    elif paso_herr == 'herr_baja_nombre':
+        datos_herr = estado.get('datos', {}) if estado else {}
+        nombre_herr = incoming_msg.strip()
+        borrar_estado(numero)
+        ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            enviar_whatsapp(SUPERVISOR_WA, f"🔙 *Baja herramienta obra → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
-        return str(resp) if not use_meta else ('OK', 200)
-
-    # Comandos listado herramienta
-    _cmd_herr = msg_n_herr.strip()
-    _seccion_herr = None
-    if _cmd_herr in ('herramienta almacen', 'herramienta almacén'):
-        _seccion_herr = 'almacen'
-    elif _cmd_herr in ('herramienta obra',):
-        _seccion_herr = 'obra'
-    elif _cmd_herr in ('herramienta personal',):
-        _seccion_herr = 'personal'
-    elif _cmd_herr in ('herramienta epis', 'herramienta épis', 'epis'):
-        _seccion_herr = 'epis'
-    elif _cmd_herr in ('herramienta todo', 'herramienta todos', 'herramienta completo', 'herramienta'):
-        _seccion_herr = 'todo'
-    if _seccion_herr:
-        import threading as _th_h
-        _sec = _seccion_herr
-        def _gen_herr_pdf():
-            try:
-                pdf_bytes = generar_pdf_herramienta(_sec)
-                ts = datetime.now().strftime('%Y%m%d%H%M%S')
-                ref = f"HERR-{_sec.upper()}-{ts}"
-                subir_pdf_albaran(pdf_bytes, ref)
-                pdf_url = f"https://bot-production-66b8.up.railway.app/albaran/{ref}.pdf"
-                titulos = {'almacen':'Almacén','obra':'En Obra','personal':'Personal','epis':'EPIs','todo':'Completo'}
-                enviar_whatsapp(SUPERVISOR_WA, f"🔧 *Herramienta — {titulos.get(_sec,'Listado')}*", media_url=pdf_url)
-            except Exception as e:
-                enviar_whatsapp(SUPERVISOR_WA, f"❌ Error generando PDF herramienta: {e}")
-        _th_h.Thread(target=_gen_herr_pdf, daemon=True).start()
-        msg.body("⏳ Generando PDF de herramienta, te lo envío enseguida...")
+            enviar_whatsapp(SUPERVISOR_WA,
+                f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Almacén: Listado PDF de stock ─────────────────────────────────────────
