@@ -3855,6 +3855,7 @@ def generar_pdf_herramienta(seccion='todo'):
     return buffer.getvalue()
 
 
+def get_material_by_nombre(nombre):
     """Busca material por nombre exacto o aproximado. Devuelve (id, nombre, unidad, stock_actual, stock_minimo)."""
     import unicodedata as _ud
     def _norm(t):
