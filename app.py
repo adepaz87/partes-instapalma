@@ -1340,7 +1340,130 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Almacén: Consulta de stock ────────────────────────────────────────────
+    # ── Paso: consulta_menu (qué consultar) ──────────────────────────────────
+    if paso_herr == 'consulta_menu':
+        op = msg_n_herr.strip()
+        if op == '1':
+            # Consulta material de almacén (stock)
+            borrar_estado(numero)
+            set_paso(numero, 'stock_consulta')
+            msg.body("🔍 ¿Qué material quieres consultar?\n_Escribe el nombre o parte de él_")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '2':
+            # Consulta stock de herramienta — submenu todo/familia
+            set_paso(numero, 'herr_stock_menu')
+            msg.body(
+                "🔧 *Consulta stock de herramienta*\n\n"
+                "1️⃣ Todo el material\n"
+                "2️⃣ Por familia"
+            )
+            return str(resp) if not use_meta else ('OK', 200)
+        else:
+            msg.body(
+                "🔍 *CONSULTA*\n\n"
+                "1️⃣ Material de almacén\n"
+                "2️⃣ Stock de herramienta"
+            )
+            return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Paso: herr_stock_menu (todo / familia) ────────────────────────────────
+    if paso_herr == 'herr_stock_menu':
+        op = msg_n_herr.strip()
+        if op == '1':
+            borrar_estado(numero)
+            try:
+                url = _enviar_pdf_herramienta('almacen')
+                msg.body(f"📦 *Stock completo de almacén:*\n{url}")
+            except Exception as e:
+                msg.body(f"❌ Error generando PDF: {e}")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '2':
+            # Calcular familias disponibles desde la BD
+            try:
+                _c = get_db(); _cur = _c.cursor()
+                _cur.execute("""
+                    SELECT DISTINCT
+                        LOWER(SPLIT_PART(nombre, ' ', 1)) AS familia
+                    FROM herramienta
+                    WHERE stock_almacen > 0
+                    ORDER BY 1
+                """)
+                familias = [r[0] for r in _cur.fetchall() if r[0]]
+                _cur.close(); _c.close()
+                if not familias:
+                    borrar_estado(numero)
+                    msg.body("⚠️ No hay herramienta con stock en almacén.")
+                    return str(resp) if not use_meta else ('OK', 200)
+                lineas = [f"{i+1}️⃣ {f.capitalize()}" for i, f in enumerate(familias[:15])]
+                set_dato(numero, 'herr_familias', familias)
+                set_paso(numero, 'herr_stock_familia')
+                msg.body("🗂️ *Familias disponibles:*\n\n" + "\n".join(lineas) + "\n\nEscribe el número o el nombre de la familia")
+            except Exception as e:
+                borrar_estado(numero)
+                msg.body(f"❌ Error: {e}")
+            return str(resp) if not use_meta else ('OK', 200)
+        else:
+            msg.body(
+                "🔧 *Consulta stock de herramienta*\n\n"
+                "1️⃣ Todo el material\n"
+                "2️⃣ Por familia"
+            )
+            return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Paso: herr_stock_familia (el usuario elige familia) ───────────────────
+    if paso_herr == 'herr_stock_familia':
+        datos_h = estado.get('datos', {}) if estado else {}
+        familias = datos_h.get('herr_familias', [])
+        entrada = msg_n_herr.strip()
+        # Puede ser número o texto
+        familia_sel = None
+        if entrada.isdigit():
+            idx = int(entrada) - 1
+            if 0 <= idx < len(familias):
+                familia_sel = familias[idx]
+        else:
+            # Buscar coincidencia parcial
+            for f in familias:
+                if entrada in f or f in entrada:
+                    familia_sel = f
+                    break
+        if not familia_sel:
+            borrar_estado(numero)
+            msg.body("⚠️ Familia no reconocida. Escribe `consulta` para volver a intentarlo.")
+            return str(resp) if not use_meta else ('OK', 200)
+        borrar_estado(numero)
+        # Generar listado de esa familia
+        try:
+            _c = get_db(); _cur = _c.cursor()
+            _cur.execute("""
+                SELECT nombre, stock_almacen, observaciones
+                FROM herramienta
+                WHERE LOWER(nombre) LIKE %s
+                  AND tipo != 'personal'
+                ORDER BY nombre
+            """, (f"%{familia_sel}%",))
+            rows = _cur.fetchall()
+            _cur.close(); _c.close()
+            if not rows:
+                msg.body(f"⚠️ No hay herramienta de la familia *{familia_sel.capitalize()}* en almacén.")
+            else:
+                lineas = [f"🔧 *{r[0]}*: {r[1]} ud." + (f"\n   _{r[2]}_" if r[2] else "") for r in rows]
+                msg.body(f"📦 *Familia: {familia_sel.capitalize()}*\n\n" + "\n".join(lineas))
+        except Exception as e:
+            msg.body(f"❌ Error: {e}")
+        return str(resp) if not use_meta else ('OK', 200)
+
     if normalizar(incoming_msg).strip() in MENSAJES_STOCK_CONSULTA:
+        # Mostrar menú de consulta
+        set_paso(numero, 'consulta_menu')
+        msg.body(
+            "🔍 *CONSULTA*\n\n"
+            "1️⃣ Material de almacén\n"
+            "2️⃣ Stock de herramienta"
+        )
+        return str(resp) if not use_meta else ('OK', 200)
+
+    if False and normalizar(incoming_msg).strip() in []:  # bloque original desactivado
         # Intentar extraer el material de la misma frase
         msg_norm = normalizar(incoming_msg)
         busqueda = msg_norm
