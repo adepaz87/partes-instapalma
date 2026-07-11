@@ -2541,6 +2541,36 @@ def admin_reset_conv():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/carga-herramienta', methods=['POST'])
+def admin_carga_herramienta():
+    """Carga masiva de herramienta en obra desde JSON. Uso interno."""
+    try:
+        items = request.get_json()  # lista de {nombre, obra, responsable, fecha_alta}
+        conn = get_db(); cur = conn.cursor()
+        insertadas = 0
+        for item in items:
+            nombre = item['nombre']
+            obra = item.get('obra', '')
+            resp = item.get('responsable') or ''
+            fecha = item.get('fecha_alta', '2026-01-01')
+            # Herramienta maestra
+            cur.execute("""
+                INSERT INTO herramienta (nombre, tipo, stock_almacen)
+                VALUES (%s, 'almacen', 0)
+                ON CONFLICT (nombre) DO NOTHING
+            """, (nombre,))
+            cur.execute("SELECT id FROM herramienta WHERE nombre=%s", (nombre,))
+            herr_id = cur.fetchone()[0]
+            cur.execute("""
+                INSERT INTO herramienta_obra (herramienta_id, operario, nombre_operario, obra, fecha_alta)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (herr_id, resp, resp or '—', obra, fecha))
+            insertadas += 1
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'insertadas': insertadas}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/truncate-partes', methods=['POST'])
 def admin_truncate():
     try:
