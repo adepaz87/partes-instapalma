@@ -2217,8 +2217,61 @@ def descargar_pdf(parte_id):
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
-@app.route('/admin/insert', methods=['POST'])
-def admin_insert():
+@app.route('/partes/<int:parte_id>/pdf', methods=['GET'])
+def descargar_pdf(parte_id):
+    r = get_parte_by_id(parte_id)
+    if not r:
+        return "Parte no encontrado", 404
+    datos = {
+        'numero_parte': r[1], 'fecha': r[2], 'cliente': r[4], 'obra': r[5],
+        'operarios': r[6] or '', 'albaranes': r[7] or '', 'material_stock': r[8] or '',
+        'devolucion_almacen': r[9] or 'Ninguno',
+        'descripcion': r[10] or '', 'terminado': r[11] or '', 'tiempo_restante': r[12] or ''
+    }
+    pdf_bytes = generar_pdf(datos)
+    fecha_pdf2 = (r[2] or '').replace('/', '-').replace(' ', '')
+    obra_pdf2 = limpiar_nombre_archivo(r[5] or 'obra')
+    ops_raw2 = r[6] or ''
+    ops_lista2 = [limpiar_nombre_archivo(l.split('—')[0].split('-')[0].strip().split()[0]) for l in ops_raw2.split('\n') if l.strip()]
+    ops_pdf2 = '-'.join(ops_lista2) if ops_lista2 else 'OPERARIOS'
+    nombre = f"{fecha_pdf2}-{obra_pdf2}-{ops_pdf2}.pdf"
+    # Marcar como descargado
+    try:
+        from datetime import datetime as dt
+        conn2 = get_db(); cur2 = conn2.cursor()
+        cur2.execute("UPDATE partes SET pdf_descargado=TRUE, pdf_descargado_at=%s WHERE id=%s",
+                    (dt.utcnow(), parte_id))
+        conn2.commit(); cur2.close(); conn2.close()
+    except Exception:
+        pass
+    from flask import Response
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
+
+@app.route('/albaran/<numero_pdf>', methods=['GET'])
+def descargar_albaran(numero_pdf):
+    """Sirve el PDF de un albarán almacenado en BD."""
+    from flask import Response
+    try:
+        numero = numero_pdf.replace('_', '/').replace('.pdf', '')
+        # También intentar con guiones tal cual
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT pdf_bytes, numero FROM stock_albaranes WHERE numero = %s OR REPLACE(numero,'/','-') = %s", (numero, numero_pdf.replace('.pdf','')))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row or not row[0]:
+            return "Albarán no encontrado", 404
+        pdf_data = bytes(row[0])
+        nombre = f"Albaran_{row[1].replace('/','_')}.pdf"
+        return Response(pdf_data, mimetype='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="{nombre}"',
+                     'Content-Type': 'application/pdf'})
+    except Exception as e:
+        print(f"Error servir albaran PDF: {e}")
+        return "Error interno", 500
+
+
     try:
         datos = request.get_json()
         conn = get_db()
@@ -2841,8 +2894,13 @@ def init_stock_db():
                 obra VARCHAR(200),
                 lineas JSONB,
                 pdf_url TEXT,
+                pdf_bytes BYTEA,
                 created_at TIMESTAMP DEFAULT NOW()
             )
+        """)
+        # Migración: añadir columna pdf_bytes si no existe
+        cur.execute("""
+            ALTER TABLE stock_albaranes ADD COLUMN IF NOT EXISTS pdf_bytes BYTEA
         """)
         conn.commit(); cur.close(); conn.close()
         print("Stock DB OK")
@@ -3114,22 +3172,19 @@ def generar_pdf_albaran(albaran):
     return buffer.getvalue()
 
 def subir_pdf_albaran(pdf_bytes, numero):
+    """Guarda el PDF en la BD y devuelve la URL pública del endpoint propio."""
     try:
-        import cloudinary, cloudinary.uploader, base64 as _b64
-        cloudinary.config(
-            cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME',''),
-            api_key=os.environ.get('CLOUDINARY_API_KEY',''),
-            api_secret=os.environ.get('CLOUDINARY_API_SECRET','')
-        )
-        b64 = _b64.b64encode(pdf_bytes).decode()
-        result = cloudinary.uploader.upload(
-            f"data:application/pdf;base64,{b64}",
-            public_id=f"albaran_{numero.replace('-','_')}",
-            resource_type='raw', folder='instapalma_albaranes'
-        )
-        return result.get('secure_url','')
+        BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
+        numero_safe = numero.replace('/', '_').replace(' ', '_')
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE stock_albaranes SET pdf_bytes = %s WHERE numero = %s
+        """, (psycopg2.Binary(pdf_bytes), numero))
+        conn.commit(); cur.close(); conn.close()
+        return f"https://{BOT_URL}/albaran/{numero_safe}.pdf"
     except Exception as e:
-        print(f"Error subir PDF albarán: {e}")
+        print(f"Error guardar PDF albarán en BD: {e}")
         return ''
 
 # ── Flujo conversacional stock ────────────────────────────────────────────────
