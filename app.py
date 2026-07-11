@@ -1574,7 +1574,21 @@ def webhook():
                     f"¿Es correcto? Responde *SÍ* o *NO*"
                 )
         else:
-            mat, err = buscar_material_msg(incoming_msg)
+            # ── Selección por número si hay candidatos múltiples guardados ──
+            datos_s = get_estado(numero)['datos']
+            candidatos_prev = datos_s.get('stock_multiples_candidatos', [])
+            mat = None; err = None
+            if candidatos_prev and incoming_msg.strip().isdigit():
+                idx = int(incoming_msg.strip()) - 1
+                if 0 <= idx < len(candidatos_prev):
+                    c = candidatos_prev[idx]
+                    mat = tuple(c)
+                    set_dato(numero, 'stock_multiples_candidatos', [])
+                else:
+                    err = f"❌ Número fuera de rango. Elige entre 1 y {len(candidatos_prev)}."
+            else:
+                set_dato(numero, 'stock_multiples_candidatos', [])
+                mat, err = buscar_material_msg(incoming_msg)
             if err:
                 if isinstance(err, tuple) and err[0] == 'RETALES':
                     # Es un grupo de retales — preguntar metros necesarios
@@ -1588,15 +1602,22 @@ def webhook():
                     sugerencia_previa = sugerir_retales(candidatos, 9999)
                     retales_info = sugerencia_previa['retales']
                     total_m = sugerencia_previa['total_disponible']
-                    lista_r = '\n'.join([f"  • {r['nombre']} — {r['metros']} m" for r in retales_info])
+                    lista_r = '\n'.join([f"  *{i}.* {r['nombre']} — {r['metros']} m" for i, r in enumerate(retales_info, 1)])
                     msg.body(
                         f"📏 *Retales disponibles de {incoming_msg}:*\n{lista_r}\n"
                         f"Total: *{total_m} m*\n\n"
                         f"¿Cuántos metros necesitas?"
                     )
+                elif isinstance(err, tuple) and err[0] == 'MULTIPLES':
+                    candidatos = err[1]
+                    texto = err[2]
+                    candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4]), float(c[5]) if len(c) > 5 and c[5] else 0] for c in candidatos]
+                    set_dato(numero, 'stock_multiples_candidatos', candidatos_serial)
+                    set_paso(numero, 'stock_salida_material')
+                    msg.body(texto)
                 else:
                     set_paso(numero, 'stock_salida_material')
-                    msg.body(err)
+                    msg.body(err if isinstance(err, str) else str(err))
             else:
                 set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2], 'stock': float(mat[3]), 'precio': float(mat[5]) if len(mat) > 5 and mat[5] else 0})
                 set_paso(numero, 'stock_salida_cantidad')
@@ -1769,7 +1790,21 @@ def webhook():
                     f"¿Es correcto? Responde *SÍ* o *NO*"
                 )
         else:
-            mat, err = buscar_material_msg(incoming_msg)
+            # ── Selección por número si hay candidatos múltiples guardados ──
+            datos_d = get_estado(numero)['datos']
+            candidatos_prev = datos_d.get('stock_multiples_candidatos', [])
+            mat = None; err = None
+            if candidatos_prev and incoming_msg.strip().isdigit():
+                idx = int(incoming_msg.strip()) - 1
+                if 0 <= idx < len(candidatos_prev):
+                    c = candidatos_prev[idx]
+                    mat = tuple(c)
+                    set_dato(numero, 'stock_multiples_candidatos', [])
+                else:
+                    err = f"❌ Número fuera de rango. Elige entre 1 y {len(candidatos_prev)}."
+            else:
+                set_dato(numero, 'stock_multiples_candidatos', [])
+                mat, err = buscar_material_msg(incoming_msg)
             if err:
                 if isinstance(err, tuple) and err[0] == 'RETALES':
                     # Devolución de retal — mostrar lista y que elija cuál devuelve
@@ -1782,8 +1817,15 @@ def webhook():
                         f"📥 *Retales de {incoming_msg}:*\n{lista_r}\n\n"
                         f"¿Qué retal devuelves? Responde el *número*."
                     )
+                elif isinstance(err, tuple) and err[0] == 'MULTIPLES':
+                    candidatos = err[1]
+                    texto = err[2]
+                    candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4]), float(c[5]) if len(c) > 5 and c[5] else 0] for c in candidatos]
+                    set_dato(numero, 'stock_multiples_candidatos', candidatos_serial)
+                    set_paso(numero, 'stock_devol_material')
+                    msg.body(texto)
                 else:
-                    msg.body(err)
+                    msg.body(err if isinstance(err, str) else str(err))
             else:
                 set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2]})
                 set_paso(numero, 'stock_devol_cantidad')
@@ -3109,8 +3151,8 @@ def buscar_material_msg(texto):
     # Varios candidatos — detectar si son retales del mismo cable
     if detectar_retales(r):
         return None, ('RETALES', r)  # señal especial: es un grupo de retales
-    lista = '\n'.join([f"• {x[1]} ({x[3]} {x[2]})" for x in r])
-    return None, f"🔍 Encontré varios materiales:\n{lista}\n\nEscribe el nombre más completo."
+    lista = '\n'.join([f"*{i}.* {x[1]} ({x[3]} {x[2]})" for i, x in enumerate(r, 1)])
+    return None, ('MULTIPLES', r, f"🔍 Encontré varios materiales:\n{lista}\n\nResponde con el *número* o escribe el nombre más completo.")
 
 
 def detectar_retales(candidatos):
