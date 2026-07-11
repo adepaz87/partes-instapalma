@@ -1639,7 +1639,17 @@ def webhook():
 
     elif paso == 'stock_salida_retales_metros':
         try:
-            metros_necesarios = float(incoming_msg.replace(',','.'))
+            import re as _re
+            # Aceptar número puro o extraerlo de texto como "TUBO M20 - 20m" → 20
+            txt_m = incoming_msg.strip().replace(',','.')
+            try:
+                metros_necesarios = float(txt_m)
+            except:
+                nums_encontrados = _re.findall(r'\b(\d+(?:\.\d+)?)\s*m?\b', txt_m)
+                if nums_encontrados:
+                    metros_necesarios = float(nums_encontrados[-1])
+                else:
+                    raise ValueError("sin número")
             if metros_necesarios <= 0:
                 msg.body("Los metros deben ser mayor que 0.")
             else:
@@ -1680,12 +1690,23 @@ def webhook():
         sugerencia = datos_s.get('stock_retales_sugerencia', {})
         retales_disp = sugerencia.get('retales', [])
         try:
-            # Parsear selección: "1", "1,3", "2 y 3"
+            # Parsear selección: "1", "1,3", "2 y 3", o descripción textual "Tubo corrugado M20"
             import re as _re
-            nums_str = _re.findall(r'\d+', incoming_msg)
+            nums_str = _re.findall(r'\b(\d+)\b', incoming_msg)
             seleccionados_idx = [int(n)-1 for n in nums_str if 0 < int(n) <= len(retales_disp)]
+
+            # Si no hay números válidos, intentar por descripción textual
             if not seleccionados_idx:
-                msg.body(f"Responde el número del retal (1-{len(retales_disp)}) o varios separados por coma.")
+                txt_norm = incoming_msg.strip().upper()
+                for i, r in enumerate(retales_disp):
+                    nombre_norm = r['nombre'].upper()
+                    # Coincidencia parcial: si el texto contiene palabras clave del nombre
+                    palabras = [p for p in nombre_norm.split() if len(p) > 2]
+                    if any(p in txt_norm for p in palabras):
+                        seleccionados_idx.append(i)
+
+            if not seleccionados_idx:
+                msg.body(f"Responde el *número* del retal (1-{len(retales_disp)}) o escribe parte del nombre. Ejemplo: *1* o *M20*")
             else:
                 lineas = datos_s.get('stock_lineas', [])
                 for idx in seleccionados_idx:
