@@ -666,9 +666,9 @@ def finalizar_parte(numero, datos):
 MENSAJES_VEHICULO   = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
 MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
 MENSAJES_RESUMEN_MES = ['resumen mes', 'resumen del mes', 'resumen mensual', 'cierre mes', 'cierre del mes', 'resumen fin de mes', 'fin de mes']
-MENSAJES_STOCK_SALIDA   = ['salida almacen', 'salida de almacen', 'sacar material', 'retirar material', 'salida stock']
-MENSAJES_STOCK_DEVOL    = ['devolucion almacen', 'devolución almacén', 'devolver material', 'devolucion stock', 'devolver a almacen', 'devolucion a almacen']
-MENSAJES_STOCK_CONSULTA = ['consultar stock', 'ver stock', 'cuanto hay de', 'cuánto hay de', 'hay en almacen', 'stock almacen', 'almacen stock']
+MENSAJES_STOCK_SALIDA   = ['salida']
+MENSAJES_STOCK_DEVOL    = ['devolucion', 'devolución']
+MENSAJES_STOCK_CONSULTA = ['consulta']
 
 def iniciar_vacaciones(numero):
     try:
@@ -1116,7 +1116,7 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Almacén: Salida ───────────────────────────────────────────────────────
-    if any(p in normalizar(incoming_msg) for p in MENSAJES_STOCK_SALIDA):
+    if normalizar(incoming_msg).strip() in MENSAJES_STOCK_SALIDA:
         num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
         nombre_conocido = OPERARIOS.get(num_limpio, '')
         if nombre_conocido:
@@ -1131,7 +1131,7 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Almacén: Devolución ───────────────────────────────────────────────────
-    if any(p in normalizar(incoming_msg) for p in MENSAJES_STOCK_DEVOL):
+    if normalizar(incoming_msg).strip() in MENSAJES_STOCK_DEVOL:
         num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
         nombre_conocido = OPERARIOS.get(num_limpio, '')
         if nombre_conocido:
@@ -1146,7 +1146,7 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Almacén: Consulta de stock ────────────────────────────────────────────
-    if any(p in normalizar(incoming_msg) for p in MENSAJES_STOCK_CONSULTA):
+    if normalizar(incoming_msg).strip() in MENSAJES_STOCK_CONSULTA:
         # Intentar extraer el material de la misma frase
         msg_norm = normalizar(incoming_msg)
         busqueda = msg_norm
@@ -2711,9 +2711,9 @@ def pdf_resumen(rid):
 # GESTIÓN DE STOCK DE ALMACÉN
 # ══════════════════════════════════════════════════════════════════════════════
 
-MENSAJES_STOCK_SALIDA    = ['salida almacen', 'salida de almacen', 'sacar material', 'retirar material', 'salida stock']
-MENSAJES_STOCK_DEVOL     = ['devolucion almacen', 'devolución almacén', 'devolver material', 'devolucion stock', 'devolver a almacen']
-MENSAJES_STOCK_CONSULTA  = ['stock', 'consultar stock', 'ver stock', 'cuanto hay de', 'cuánto hay de', 'hay en almacen', 'almacen']
+MENSAJES_STOCK_SALIDA    = ['salida']
+MENSAJES_STOCK_DEVOL     = ['devolucion', 'devolución']
+MENSAJES_STOCK_CONSULTA  = ['consulta']
 
 # ── DB ────────────────────────────────────────────────────────────────────────
 
