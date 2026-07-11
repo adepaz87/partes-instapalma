@@ -2249,7 +2249,7 @@ def descargar_pdf(parte_id):
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
 @app.route('/albaran/<numero_pdf>', methods=['GET'])
-def descargar_albaran(numero_pdf):
+def servir_albaran_pdf(numero_pdf):
     """Sirve el PDF de un albarán almacenado en BD."""
     from flask import Response
     try:
