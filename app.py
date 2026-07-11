@@ -3087,6 +3087,166 @@ def migrate():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/')
+def dashboard():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        # Partes
+        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%'")
+        total_partes = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND terminado='si'")
+        partes_terminados = (cur.fetchone() or [0])[0]
+        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND DATE(created_at) = CURRENT_DATE")
+        partes_hoy = cur.fetchone()[0]
+        cur.execute("SELECT numero, nombre_operario, obra, terminado, created_at FROM stock_albaranes WHERE numero LIKE 'ALB-%' ORDER BY created_at DESC LIMIT 8")
+        ultimos_partes = cur.fetchall()
+        # Stock almacén
+        cur.execute("SELECT COUNT(*) FROM stock_materiales")
+        total_mat = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM stock_materiales WHERE stock_actual <= stock_minimo AND stock_minimo > 0")
+        mat_bajos = cur.fetchone()[0]
+        cur.execute("SELECT nombre, stock_actual, unidad, stock_minimo FROM stock_materiales WHERE stock_actual <= stock_minimo AND stock_minimo > 0 ORDER BY nombre LIMIT 6")
+        mat_alerta = cur.fetchall()
+        # Herramienta
+        cur.execute("SELECT COUNT(*) FROM herramienta_obra WHERE activo=TRUE")
+        herr_obra = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM herramienta WHERE tipo='almacen' AND stock_almacen > 0")
+        herr_almacen = cur.fetchone()[0]
+        cur.execute("SELECT herramienta_nombre, nombre_operario, obra, fecha_alta FROM herramienta_obra WHERE activo=TRUE ORDER BY fecha_alta DESC LIMIT 8")
+        herr_en_obra = cur.fetchall()
+        # Vacaciones
+        cur.execute("SELECT COUNT(*) FROM vacaciones WHERE estado='pendiente'")
+        vac_pendientes = (cur.fetchone() or [0])[0]
+        # Movimientos almacén
+        cur.execute("SELECT tipo, material_nombre, cantidad, unidad, nombre_operario, obra, created_at FROM stock_movimientos ORDER BY created_at DESC LIMIT 6")
+        movimientos = cur.fetchall()
+        cur.close(); conn.close()
+    except Exception as e:
+        return f"<h1>Error: {e}</h1>", 500
+
+    filas_partes = ''
+    for p in ultimos_partes:
+        num, op, obra, term, cat = p
+        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:8px;font-size:11px">✓ Terminado</span>' if term == 'si' else '<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">🔄 En curso</span>'
+        fecha = cat.strftime('%d/%m %H:%M') if cat else '—'
+        pdf_link = f'<a href="/albaran/{num}.pdf" target="_blank" style="color:#1a3a5c;font-weight:700;font-size:16px">📄</a>'
+        filas_partes += f'<tr><td><b>{num}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td>{badge}</td><td style="font-size:12px;color:#888">{fecha}</td><td style="text-align:center">{pdf_link}</td></tr>'
+
+    filas_herr = ''
+    for h in herr_en_obra:
+        nombre, op, obra, falta = h
+        fecha = falta.strftime('%d/%m/%Y') if falta else '—'
+        filas_herr += f'<tr><td><b>{nombre}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
+
+    alertas_stock = ''
+    for m in mat_alerta:
+        nombre, stock, unidad, minimo = m
+        alertas_stock += f'<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f0f0f0"><span style="font-size:13px">{nombre}</span><span style="background:#fff3e0;border:1px solid #ffcc80;color:#e65100;padding:2px 10px;border-radius:8px;font-size:12px;white-space:nowrap">{str(stock).replace(".",",")} / {str(minimo).replace(".",",")} {unidad}</span></div>'
+    if not alertas_stock:
+        alertas_stock = '<p style="color:#2e7d32;text-align:center;padding:20px;font-size:13px">✅ Todo el stock sobre mínimos</p>'
+
+    filas_mov = ''
+    for mv in movimientos:
+        tipo, mat, cant, unidad, op, obra, cat = mv
+        color = '#e8f5e9' if tipo == 'entrada' else '#fff3e0'
+        icono = '📥' if tipo == 'entrada' else '📤'
+        fecha = cat.strftime('%d/%m %H:%M') if cat else '—'
+        filas_mov += f'<tr style="background:{color}"><td>{icono} {tipo.capitalize()}</td><td><b>{mat}</b></td><td style="text-align:center">{str(cant).replace(".",",")} {unidad}</td><td style="font-size:12px;color:#666">{op or "—"}</td><td style="font-size:12px;color:#666">{obra or "—"}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
+
+    warn_stock = 'warn' if mat_bajos > 0 else 'ok'
+    warn_vac = 'warn' if vac_pendientes > 0 else ''
+
+    return f'''<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard — Instapalma</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#333}}
+  header{{background:#1a3a5c;color:white;padding:18px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}}
+  header h1{{font-size:20px;font-weight:700}} header p{{font-size:12px;opacity:.7;margin-top:2px}}
+  .nav{{display:flex;gap:8px;flex-wrap:wrap}}
+  .nav a{{background:rgba(255,255,255,.15);color:white;padding:7px 14px;border-radius:20px;text-decoration:none;font-size:12px;font-weight:600;transition:.2s}}
+  .nav a:hover{{background:rgba(255,255,255,.3)}}
+  .kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;padding:20px 28px}}
+  .kpi{{background:white;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-top:3px solid #1a3a5c}}
+  .kpi.warn{{border-top-color:#e65100}} .kpi.ok{{border-top-color:#2e7d32}}
+  .kpi .num{{font-size:30px;font-weight:800;color:#1a3a5c}}
+  .kpi.warn .num{{color:#e65100}} .kpi.ok .num{{color:#2e7d32}}
+  .kpi .lbl{{font-size:11px;color:#888;margin-top:3px;text-transform:uppercase;letter-spacing:.4px}}
+  .grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px;padding:0 28px 28px}}
+  .card{{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);overflow:hidden}}
+  .card-full{{grid-column:1/-1}}
+  .card-head{{background:#1a3a5c;color:white;padding:12px 18px;display:flex;align-items:center;justify-content:space-between}}
+  .card-head h2{{font-size:14px;font-weight:700}}
+  .card-head a{{color:rgba(255,255,255,.8);font-size:12px;text-decoration:none}} .card-head a:hover{{color:white}}
+  table{{width:100%;border-collapse:collapse;font-size:13px}}
+  th{{background:#f7f8fa;color:#888;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #eee}}
+  td{{padding:9px 12px;border-bottom:1px solid #f5f5f5;vertical-align:middle}}
+  tr:last-child td{{border-bottom:none}} tr:hover td{{background:#fafbff}}
+  .alertas{{padding:12px 18px}}
+  @media(max-width:700px){{.grid{{grid-template-columns:1fr}}.card-full{{grid-column:1}}.kpis{{padding:14px}}.grid{{padding:0 14px 14px}}header{{padding:14px}}}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>⚡ Instapalma — Dashboard</h1><p>Panel de control general</p></div>
+  <nav class="nav">
+    <a href="/partes">📋 Partes</a>
+    <a href="/almacen">📦 Almacén</a>
+    <a href="/herramienta">🔧 Herramienta</a>
+    <a href="/vacaciones">🏖️ Vacaciones</a>
+    <a href="/vehiculos">🚐 Vehículos</a>
+    <a href="/resumenes">📊 Resúmenes</a>
+  </nav>
+</header>
+
+<div class="kpis">
+  <div class="kpi"><div class="num">{partes_hoy}</div><div class="lbl">Partes hoy</div></div>
+  <div class="kpi"><div class="num">{total_partes}</div><div class="lbl">Total partes</div></div>
+  <div class="kpi ok"><div class="num">{partes_terminados}</div><div class="lbl">Terminados</div></div>
+  <div class="kpi"><div class="num">{total_mat}</div><div class="lbl">Artículos almacén</div></div>
+  <div class="kpi {warn_stock}"><div class="num">{mat_bajos}</div><div class="lbl">Stock bajo mínimo</div></div>
+  <div class="kpi"><div class="num">{herr_obra}</div><div class="lbl">Herramienta en obra</div></div>
+  <div class="kpi ok"><div class="num">{herr_almacen}</div><div class="lbl">Herramienta almacén</div></div>
+  <div class="kpi {warn_vac}"><div class="num">{vac_pendientes}</div><div class="lbl">Vacaciones pendientes</div></div>
+</div>
+
+<div class="grid">
+
+  <div class="card">
+    <div class="card-head"><h2>📋 Últimos partes</h2><a href="/partes">Ver todos →</a></div>
+    <table>
+      <thead><tr><th>Nº</th><th>Operario</th><th>Obra</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
+      <tbody>{filas_partes or "<tr><td colspan='6' style='text-align:center;color:#aaa;padding:24px'>Sin partes</td></tr>"}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>🔧 Herramienta en obra</h2><a href="/herramienta">Ver todo →</a></div>
+    <table>
+      <thead><tr><th>Herramienta</th><th>Operario</th><th>Obra</th><th>Desde</th></tr></thead>
+      <tbody>{filas_herr or "<tr><td colspan='4' style='text-align:center;color:#aaa;padding:24px'>Nada en obra</td></tr>"}</tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>⚠️ Alertas stock</h2><a href="/almacen">Ver almacén →</a></div>
+    <div class="alertas">{alertas_stock}</div>
+  </div>
+
+  <div class="card card-full">
+    <div class="card-head"><h2>📦 Últimos movimientos almacén</h2><a href="/almacen">Ver almacén →</a></div>
+    <table>
+      <thead><tr><th>Tipo</th><th>Material</th><th>Cantidad</th><th>Operario</th><th>Obra</th><th>Fecha</th></tr></thead>
+      <tbody>{filas_mov or "<tr><td colspan='6' style='text-align:center;color:#aaa;padding:24px'>Sin movimientos</td></tr>"}</tbody>
+    </table>
+  </div>
+
+</div>
+</body></html>'''
+
 @app.route('/health', methods=['GET'])
 def health():
     return {
