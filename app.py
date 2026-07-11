@@ -263,8 +263,8 @@ def iniciar_parte(numero):
         })
         cur.execute("""
             INSERT INTO conversaciones_db (numero, paso, datos, updated_at)
-            VALUES (%s, 'cliente', %s::jsonb, NOW())
-            ON CONFLICT (numero) DO UPDATE SET paso='cliente', datos=%s::jsonb, updated_at=NOW()
+            VALUES (%s, 'fecha', %s::jsonb, NOW())
+            ON CONFLICT (numero) DO UPDATE SET paso='fecha', datos=%s::jsonb, updated_at=NOW()
         """, (numero, datos, datos))
         conn.commit(); cur.close(); conn.close()
     except Exception as e:
@@ -1652,7 +1652,7 @@ def webhook():
         borrar_estado(numero)
         if op == '1':
             iniciar_parte(numero)
-            msg.body("👷 *Bot de Partes de Trabajo — Instapalma*\n\nVamos a crear tu parte paso a paso.\n\n1️⃣ ¿Cuál es el *cliente*?")
+            msg.body("👷 *Bot de Partes de Trabajo — Instapalma*\n\nVamos a crear tu parte paso a paso.\n\n1️⃣ ¿Cuál es la *fecha* del parte?\n\n_Escribe en formato DD/MM/YYYY o escribe *hoy* para usar la fecha de hoy ({})_".format(datetime.now().strftime('%d/%m/%Y')))
         elif op == '2':
             num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
@@ -1707,7 +1707,8 @@ def webhook():
             msg.body(
                 "👷 *Bot de Partes de Trabajo — Instapalma*\n\n"
                 "Vamos a crear tu parte paso a paso.\n\n"
-                "1️⃣ ¿Cuál es el *cliente*?"
+                "1️⃣ ¿Cuál es la *fecha* del parte?\n\n"
+                "_Escribe en formato DD/MM/YYYY o escribe *hoy* para usar la fecha de hoy ({})_".format(datetime.now().strftime('%d/%m/%Y'))
             )
         else:
             msg.body("Hola 👋 Escribe *hola* para ver el menú o *parte* para crear un parte de trabajo.")
@@ -1716,16 +1717,45 @@ def webhook():
     paso = estado['paso']
     datos = estado['datos']
 
-    if paso == 'cliente':
+    if paso == 'fecha':
+        texto = incoming_msg.strip()
+        if normalizar(texto) in ['hoy', 'today']:
+            fecha_val = datetime.now().strftime('%d/%m/%Y')
+        else:
+            import re as _re
+            # Acepta DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY
+            m = _re.match(r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$', texto)
+            if m:
+                d, mo, y = m.group(1), m.group(2), m.group(3)
+                if len(y) == 2:
+                    y = '20' + y
+                try:
+                    datetime.strptime(f"{d.zfill(2)}/{mo.zfill(2)}/{y}", '%d/%m/%Y')
+                    fecha_val = f"{d.zfill(2)}/{mo.zfill(2)}/{y}"
+                except ValueError:
+                    msg.body("⚠️ Fecha no válida. Escribe la fecha en formato *DD/MM/YYYY* o escribe *hoy*.")
+                    return str(resp)
+            else:
+                msg.body(
+                    f"1️⃣ ¿Cuál es la *fecha* del parte?\n\n"
+                    f"Escribe la fecha en formato *DD/MM/YYYY*\n"
+                    f"_(o escribe *hoy* para usar la fecha de hoy: {datetime.now().strftime('%d/%m/%Y')})_"
+                )
+                return str(resp)
+        set_dato(numero, 'fecha', fecha_val)
+        set_paso(numero, 'cliente')
+        msg.body("2️⃣ ¿Cuál es el *cliente*?")
+
+    elif paso == 'cliente':
         set_dato(numero, 'cliente', incoming_msg.upper())
         set_paso(numero, 'obra')
-        msg.body("2️⃣ ¿Cuál es la *obra*?")
+        msg.body("3️⃣ ¿Cuál es la *obra*?")
 
     elif paso == 'obra':
         set_dato(numero, 'obra', incoming_msg.upper())
         set_paso(numero, 'operarios')
         msg.body(
-            "3️⃣ *Operarios y horas*\n\n"
+            "4️⃣ *Operarios y horas*\n\n"
             "Escribe cada operario en una línea:\n"
             "_Ejemplo:_\n"
             "JORGE GARCIA — 8h\n"
@@ -1761,7 +1791,7 @@ def webhook():
             set_dato(numero, 'operarios', incoming_msg)
             set_paso(numero, 'albaranes')
             msg.body(
-                "4️⃣ *Albaranes*\n\n"
+                "5️⃣ *Albaranes*\n\n"
                 "Escribe los albaranes como quieras, uno por línea.\n"
                 "_Ejemplo:_\n"
                 "DIEXFE 012604\n"
@@ -1776,7 +1806,7 @@ def webhook():
             set_dato(numero, 'albaranes', incoming_msg)
         set_paso(numero, 'material_stock')
         msg.body(
-            "5️⃣ *Material de stock* utilizado\n\n"
+            "6️⃣ *Material de stock* utilizado\n\n"
             "Escribe el material, uno por línea:\n"
             "_Ejemplo:_\n"
             "Cable 2.5mm² — 20m\n"
@@ -1789,7 +1819,7 @@ def webhook():
         set_dato(numero, 'material_stock', val)
         set_paso(numero, 'devolucion_almacen')
         msg.body(
-            "6️⃣ *Devolución a Almacén*\n\n"
+            "7️⃣ *Devolución a Almacén*\n\n"
             "¿Devuelves algún material al almacén?\n"
             "_Ejemplo: Cable 2.5mm² — 10m sobrantes_\n\n"
             "Si no hay, escribe: *ninguno*"
@@ -1799,12 +1829,12 @@ def webhook():
         val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
         set_dato(numero, 'devolucion_almacen', val)
         set_paso(numero, 'descripcion')
-        msg.body("7️⃣ *Descripción* de los trabajos realizados:")
+        msg.body("8️⃣ *Descripción* de los trabajos realizados:")
 
     elif paso == 'descripcion':
         set_dato(numero, 'descripcion', incoming_msg)
         set_paso(numero, 'terminado')
-        msg.body("8️⃣ ¿El trabajo está *terminado*?\n\nResponde *SÍ* o *NO*")
+        msg.body("9️⃣ ¿El trabajo está *terminado*?\n\nResponde *SÍ* o *NO*")
 
     elif paso == 'terminado':
         if normalizar(incoming_msg) in ['si', 'sí', 's', 'yes']:
@@ -1815,7 +1845,7 @@ def webhook():
         elif normalizar(incoming_msg) in ['no', 'n']:
             set_dato(numero, 'terminado', 'No')
             set_paso(numero, 'tiempo_restante')
-            msg.body("9️⃣ ¿Cuánto tiempo queda para terminarlo?\n\n_Ejemplo: 2 días, media jornada, 3 horas..._")
+            msg.body("🔟 ¿Cuánto tiempo queda para terminarlo?\n\n_Ejemplo: 2 días, media jornada, 3 horas..._")
         else:
             msg.body("Responde *SÍ* si está terminado o *NO* si falta trabajo.")
 
