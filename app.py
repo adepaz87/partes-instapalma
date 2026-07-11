@@ -233,10 +233,12 @@ def set_dato(numero, clave, valor):
         valor_json = _json.dumps(valor, ensure_ascii=False)
         conn = get_db(); cur = conn.cursor()
         cur.execute("""
-            UPDATE conversaciones_db
-            SET datos = datos || jsonb_build_object(%s, %s::jsonb), updated_at=NOW()
-            WHERE numero=%s
-        """, (clave, valor_json, numero))
+            INSERT INTO conversaciones_db (numero, paso, datos, updated_at)
+            VALUES (%s, '', jsonb_build_object(%s, %s::jsonb), NOW())
+            ON CONFLICT (numero) DO UPDATE
+            SET datos = conversaciones_db.datos || jsonb_build_object(%s, %s::jsonb),
+                updated_at = NOW()
+        """, (numero, clave, valor_json, clave, valor_json))
         conn.commit(); cur.close(); conn.close()
     except Exception as e:
         print(f"Error set_dato: {e}")
@@ -1641,6 +1643,16 @@ def webhook():
         datos_s = get_estado(numero)['datos']
         sugerencia = datos_s.get('stock_retales_sugerencia', {})
         retales_disp = sugerencia.get('retales', [])
+        print(f"[DEBUG retales_elegir] sugerencia keys={list(sugerencia.keys()) if sugerencia else 'VACIO'}, retales_disp len={len(retales_disp)}, datos_keys={list(datos_s.keys()) if datos_s else 'NONE'}")
+        # Si no hay sugerencia guardada, reconstruirla desde candidatos
+        if not retales_disp:
+            candidatos_raw = datos_s.get('stock_retales_candidatos', [])
+            if candidatos_raw:
+                candidatos = [tuple(c) for c in candidatos_raw]
+                sugerencia = sugerir_retales(candidatos, 9999)
+                set_dato(numero, 'stock_retales_sugerencia', sugerencia)
+                retales_disp = sugerencia.get('retales', [])
+                print(f"[DEBUG retales_elegir] Reconstruido: retales_disp len={len(retales_disp)}")
         try:
             import re as _re
             txt_orig = incoming_msg.strip()
