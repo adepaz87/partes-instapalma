@@ -1155,7 +1155,16 @@ def webhook():
         if busqueda:
             mat, err = buscar_material_msg(busqueda)
             if err:
-                msg.body(err)
+                if isinstance(err, tuple) and err[0] == 'RETALES':
+                    candidatos = err[1]
+                    lineas = []
+                    for c in candidatos:
+                        precio = float(c[5]) if len(c) > 5 and c[5] else 0
+                        precio_txt = f" — {precio:.2f} €/ud" if precio > 0 else ""
+                        lineas.append(f"• *{c[1]}*: {c[3]} {c[2]}{precio_txt}")
+                    msg.body("🔍 *Resultados encontrados:*\n\n" + "\n".join(lineas))
+                else:
+                    msg.body(err if isinstance(err, str) else str(err))
             else:
                 stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
                 precio = float(mat[5]) if len(mat) > 5 and mat[5] else 0
@@ -1866,10 +1875,26 @@ def webhook():
     # ── Flujo Almacén: Consulta ───────────────────────────────────────────────
     elif paso == 'stock_consulta':
         mat, err = buscar_material_msg(incoming_msg)
-        borrar_estado(numero)
         if err:
-            msg.body(f"{err}\n\nEscribe *Consulta* para intentarlo de nuevo.")
+            # Caso retales: mostrar lista formateada
+            if isinstance(err, tuple) and err[0] == 'RETALES':
+                candidatos = err[1]
+                borrar_estado(numero)
+                lineas = []
+                for c in candidatos:
+                    precio = float(c[5]) if len(c) > 5 and c[5] else 0
+                    precio_txt = f" — {precio:.2f} €/ud" if precio > 0 else ""
+                    lineas.append(f"• *{c[1]}*: {c[3]} {c[2]}{precio_txt}")
+                msg.body("🔍 *Resultados encontrados:*\n\n" + "\n".join(lineas) + "\n\nEscribe el nombre más completo para más detalle.")
+            # Varios resultados normales (ya formateados como string)
+            elif isinstance(err, str) and err.startswith("🔍 Encontré varios"):
+                borrar_estado(numero)
+                msg.body(err + "\n\nEscribe *Consulta* para intentarlo de nuevo.")
+            else:
+                borrar_estado(numero)
+                msg.body(f"{err}\n\nEscribe *Consulta* para intentarlo de nuevo.")
         else:
+            borrar_estado(numero)
             stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
             precio = float(mat[5]) if len(mat) > 5 and mat[5] else 0
             alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
