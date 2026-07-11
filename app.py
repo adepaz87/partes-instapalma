@@ -1158,8 +1158,10 @@ def webhook():
                 msg.body(err)
             else:
                 stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
+                precio = float(mat[5]) if len(mat) > 5 and mat[5] else 0
                 alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
-                msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{alerta}")
+                precio_txt = f"\nPrecio unitario: *{precio:.2f} €*" if precio > 0 else ""
+                msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{precio_txt}{alerta}")
         else:
             set_paso(numero, 'stock_consulta')
             msg.body("🔍 ¿Qué material quieres consultar?\n_Escribe el nombre o parte de él_")
@@ -1866,11 +1868,13 @@ def webhook():
         mat, err = buscar_material_msg(incoming_msg)
         borrar_estado(numero)
         if err:
-            msg.body(err)
+            msg.body(f"{err}\n\nEscribe *Consulta* para intentarlo de nuevo.")
         else:
             stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
+            precio = float(mat[5]) if len(mat) > 5 and mat[5] else 0
             alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
-            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{alerta}")
+            precio_txt = f"\nPrecio unitario: *{precio:.2f} €*" if precio > 0 else ""
+            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{precio_txt}{alerta}")
 
     # ── Flujo vacaciones ──────────────────────────────────────────────────────
     elif paso == 'vac_nombre':
