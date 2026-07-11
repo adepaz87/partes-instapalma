@@ -220,15 +220,12 @@ def set_paso(numero, paso):
 def set_dato(numero, clave, valor):
     try:
         import json as _json
-        # Serializar listas/dicts a JSON para almacenamiento correcto en jsonb
-        if isinstance(valor, (list, dict)):
-            valor_json = _json.dumps(valor, ensure_ascii=False)
-        else:
-            valor_json = valor
+        # Siempre serializar a JSON válido para almacenamiento en jsonb
+        valor_json = _json.dumps(valor, ensure_ascii=False)
         conn = get_db(); cur = conn.cursor()
         cur.execute("""
             UPDATE conversaciones_db
-            SET datos = datos || jsonb_build_object(%s, %s::text::jsonb), updated_at=NOW()
+            SET datos = datos || jsonb_build_object(%s, %s::jsonb), updated_at=NOW()
             WHERE numero=%s
         """, (clave, valor_json, numero))
         conn.commit(); cur.close(); conn.close()
@@ -575,9 +572,13 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
     try:
         from twilio.rest import Client
         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        # Asegurar formato whatsapp:+XXXXX
-        if not destino.startswith('whatsapp:'):
-            destino = 'whatsapp:+' + destino.lstrip('+')
+        # Normalizar formato: asegurar whatsapp:+XXXXX sin espacios
+        destino = destino.strip()
+        if destino.startswith('whatsapp:'):
+            num = destino[len('whatsapp:'):].strip().lstrip('+')
+            destino = f'whatsapp:+{num}'
+        else:
+            destino = 'whatsapp:+' + destino.strip().lstrip('+')
         kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
         if media_url:
             kwargs['media_url'] = [media_url]
