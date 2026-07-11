@@ -2947,6 +2947,17 @@ def admin_stock_materiales():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/albaranes-lista', methods=['GET'])
+def admin_albaranes_lista():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT numero, length(pdf_bytes), created_at FROM stock_albaranes ORDER BY created_at DESC LIMIT 20")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {'count': len(rows), 'items': [{'numero': r[0], 'bytes': r[1], 'created_at': str(r[2])} for r in rows]}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/migrate', methods=['GET'])
 def migrate():
     try:
