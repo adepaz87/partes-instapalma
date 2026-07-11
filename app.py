@@ -2553,6 +2553,32 @@ def admin_reset_herramienta():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/carga-almacen-herramienta', methods=['POST'])
+def admin_carga_almacen_herramienta():
+    """Carga stock de almacén. Body: lista de {nombre, stock, observaciones}
+    Si la herramienta ya existe (viene de herramienta_obra), actualiza solo el stock.
+    Si no existe, la crea."""
+    try:
+        items = request.get_json()
+        conn = get_db(); cur = conn.cursor()
+        actualizadas = 0
+        for item in items:
+            nombre = item['nombre']
+            stock  = int(item.get('stock', 0))
+            obs    = item.get('observaciones', '')
+            cur.execute("""
+                INSERT INTO herramienta (nombre, tipo, stock_almacen, observaciones)
+                VALUES (%s, 'almacen', %s, %s)
+                ON CONFLICT (nombre) DO UPDATE
+                  SET stock_almacen = EXCLUDED.stock_almacen,
+                      observaciones = EXCLUDED.observaciones
+            """, (nombre, stock, obs))
+            actualizadas += 1
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'actualizadas': actualizadas}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/carga-herramienta', methods=['POST'])
 def admin_carga_herramienta():
     """Carga masiva de herramienta. Body: lista de {nombre, obra, responsable, fecha_alta, cantidad}"""
