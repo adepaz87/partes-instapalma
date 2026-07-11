@@ -2920,6 +2920,17 @@ def admin_schema():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/stock-materiales', methods=['GET'])
+def admin_stock_materiales():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, familia FROM stock_materiales ORDER BY familia, nombre")
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        return {'count': len(rows), 'items': [{'id':r[0],'nombre':r[1],'unidad':r[2],'stock':float(r[3]) if r[3] else 0,'minimo':float(r[4]) if r[4] else 0,'familia':r[5]} for r in rows]}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/migrate', methods=['GET'])
 def migrate():
     try:
