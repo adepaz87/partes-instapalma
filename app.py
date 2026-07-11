@@ -1427,7 +1427,13 @@ def webhook():
                 if rows:
                     filas = [['Artículo', 'Familia', 'Stock', 'Ud.']]
                     for r in rows:
-                        filas.append([r[0] or '', r[3] or '', str(r[1]) if r[1] is not None else '0', r[2] or ''])
+                        stock_val = r[1]
+                        if stock_val is None:
+                            stock_str = '0'
+                        else:
+                            stock_f = float(stock_val)
+                            stock_str = (f"{stock_f:.2f}".rstrip('0').rstrip('.') if stock_f != int(stock_f) else str(int(stock_f))).replace('.', ',')
+                        filas.append([r[0] or '', r[3] or '', stock_str, r[2] or ''])
                     t = Table(filas, colWidths=[8*cm, 3*cm, 2*cm, 2*cm])
                     t.setStyle(TableStyle([
                         ('BACKGROUND', (0,0), (-1,0), AZUL),
@@ -2443,7 +2449,10 @@ def webhook():
                 for c in candidatos:
                     precio = float(c[5]) if len(c) > 5 and c[5] else 0
                     precio_txt = f" — {precio:.2f} €/ud".replace(".",",") if precio > 0 else ""
-                    lineas.append(f"• *{c[1]}*: {c[3]} {c[2]}{precio_txt}")
+                    def _fmt_r(v):
+                        f2 = float(v)
+                        return (f"{f2:.3f}".rstrip('0').rstrip('.')).replace('.', ',')
+                    lineas.append(f"• *{c[1]}*: {_fmt_r(c[3])} {c[2]}{precio_txt}")
                 msg.body("🔍 *Resultados encontrados:*\n\n" + "\n".join(lineas) + "\n\nEscribe el nombre más completo para más detalle.")
             # Varios resultados normales (ya formateados como string)
             elif isinstance(err, str) and err.startswith("🔍 Encontré varios"):
@@ -2457,8 +2466,11 @@ def webhook():
             stock = mat[3]; minimo = mat[4]; unidad = mat[2]; nombre_mat = mat[1]
             precio = float(mat[5]) if len(mat) > 5 and mat[5] else 0
             alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
-            precio_txt = f"\nPrecio unitario: *{precio:.2f} €*" if precio > 0 else ""
-            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{stock} {unidad}*\nStock mínimo: {minimo} {unidad}{precio_txt}{alerta}")
+            precio_txt = f"\nPrecio unitario: *{precio:.2f} €*".replace(".",",") if precio > 0 else ""
+            def _fmt(v):
+                f = float(v)
+                return (f"{f:.3f}".rstrip('0').rstrip('.')).replace('.', ',')
+            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{_fmt(stock)} {unidad}*\nStock mínimo: {_fmt(minimo)} {unidad}{precio_txt}{alerta}")
 
     # ── Flujo vacaciones ──────────────────────────────────────────────────────
     elif paso == 'vac_nombre':
