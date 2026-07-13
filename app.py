@@ -1354,11 +1354,11 @@ def webhook():
         if nombre_conocido:
             set_dato(numero, 'nombre_operario', nombre_conocido)
         set_dato(numero, 'stock_lineas', [])
-        set_paso(numero, 'stock_devol_material')
+        set_paso(numero, 'stock_devol_obra')
         msg.body(
             "📥 *DEVOLUCIÓN A ALMACÉN*\n\n"
-            "¿Qué material devuelves?\n"
-            "_Escribe el nombre del material_"
+            "¿De qué obra procede el material?\n"
+            "_Escribe el nombre de la obra_"
         )
         return str(resp) if not use_meta else ('OK', 200)
 
@@ -1667,8 +1667,8 @@ def webhook():
             if nombre_conocido2:
                 set_dato(numero, 'nombre_operario', nombre_conocido2)
             set_dato(numero, 'stock_lineas', [])
-            set_paso(numero, 'stock_devol_material')
-            msg.body("📥 *DEVOLUCIÓN A ALMACÉN*\n\n¿Qué material devuelves?\n_Escribe el nombre del material_")
+            set_paso(numero, 'stock_devol_obra')
+            msg.body("📥 *DEVOLUCIÓN A ALMACÉN*\n\n¿De qué obra procede el material?\n_Escribe el nombre de la obra_")
         elif op == '4':
             set_paso(numero, 'consulta_menu')
             msg.body("🔍 *CONSULTA*\n\n1️⃣ Material de almacén\n2️⃣ Stock de herramienta")
@@ -2305,11 +2305,11 @@ def webhook():
                     if r and r[0] <= r[1] and r[1] > 0:
                         alertas.append(f"⚠️ {r[2]}: quedan {r[0]} {r[3]} (mínimo {r[1]})")
                 # Generar PDF
-                pdf_bytes = generar_pdf_albaran({
+                pdf_bytes_sal = generar_pdf_albaran({
                     'numero': numero_alb, 'nombre_operario': nombre_op,
                     'obra': obra, 'lineas': lineas, 'fecha': fecha_str
                 })
-                pdf_url = subir_pdf_albaran(pdf_bytes, numero_alb)
+                pdf_url = subir_pdf_albaran(pdf_bytes_sal, numero_alb)
                 # Enviar al operario
                 op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
                 resumen_txt = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
@@ -2318,10 +2318,39 @@ def webhook():
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"🏢 {obra}\n{resumen_txt}\n"
                     f"━━━━━━━━━━━━━━━━━━━━"
+                    + (f"\n📄 PDF: {pdf_url}" if pdf_url else "")
                 )
-                enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
+                enviar_whatsapp(op_wa, texto)
                 # Enviar al supervisor
-                enviar_whatsapp(SUPERVISOR_WA, f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}", media_url=pdf_url if pdf_url else None)
+                enviar_whatsapp(SUPERVISOR_WA,
+                    f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}"
+                    + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
+                # Email con PDF adjunto
+                try:
+                    nombre_pdf_sal = f"Albaran_Salida_{numero_alb.replace('/','_').replace('-','_')}.pdf"
+                    msg_email_sal = MIMEMultipart()
+                    msg_email_sal['From']    = GMAIL_USER
+                    msg_email_sal['To']      = ', '.join([SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2])
+                    msg_email_sal['Subject'] = f"[SALIDA ALMACÉN] {numero_alb} — {nombre_op} — {obra}"
+                    body_sal = (
+                        f"Salida de almacén registrada.\n\n"
+                        f"Albarán: {numero_alb}\n"
+                        f"Operario: {nombre_op}\n"
+                        f"Obra: {obra}\n"
+                        f"Fecha: {fecha_str}\n\n"
+                        f"Materiales:\n" +
+                        '\n'.join([f"  - {l['material']}: {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
+                    )
+                    msg_email_sal.attach(MIMEText(body_sal, 'plain'))
+                    part_sal = MIMEApplication(pdf_bytes_sal, Name=nombre_pdf_sal)
+                    part_sal.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf_sal}"')
+                    msg_email_sal.attach(part_sal)
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
+                        srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+                        srv.sendmail(GMAIL_USER, [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2], msg_email_sal.as_string())
+                    print(f"Email salida almacén OK — {numero_alb}")
+                except Exception as e_mail_sal:
+                    print(f"Error email salida almacén: {e_mail_sal}")
                 # Alertas de stock bajo
                 for a in alertas:
                     enviar_whatsapp(SUPERVISOR_WA, a)
@@ -2334,7 +2363,20 @@ def webhook():
             msg.body("Responde *SÍ* para confirmar o *NO* para cancelar.")
 
     # ── Flujo Almacén: Devolución ─────────────────────────────────────────────
+    elif paso == 'stock_devol_obra':
+        # Guarda la obra de procedencia y pasa a pedir material
+        set_dato(numero, 'stock_devol_obra_txt', incoming_msg.strip())
+        set_paso(numero, 'stock_devol_material')
+        msg.body(
+            f"✅ Obra: *{incoming_msg.strip()}*\n\n"
+            f"¿Qué material devuelves?\n"
+            f"_Escribe nombre y cantidad. Ej: Cable RV-K 3x2.5 — 12 m_\n"
+            f"_O escribe el nombre y te pido la cantidad_\n\n"
+            f"Di *listo* cuando hayas añadido todo."
+        )
+
     elif paso == 'stock_devol_material':
+        # Flujo simplificado: texto libre, sin buscar en BD ni retales
         if normalizar(incoming_msg) in ['listo', 'fin', 'terminar', 'acabar', 'ya', 'eso es todo']:
             datos_d = get_estado(numero)['datos']
             lineas = datos_d.get('stock_lineas', [])
@@ -2342,131 +2384,126 @@ def webhook():
                 msg.body("No has añadido ningún material. Dime qué devuelves.")
             else:
                 set_paso(numero, 'stock_devol_confirmar')
+                obra_proc = datos_d.get('stock_devol_obra_txt', 'Sin especificar')
                 resumen = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
                 msg.body(
                     f"📥 *RESUMEN DEVOLUCIÓN*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🏗️ Obra: {obra_proc}\n"
                     f"{resumen}\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"¿Es correcto? Responde *SÍ* o *NO*"
                 )
         else:
-            # ── Selección por número si hay candidatos múltiples guardados ──
-            datos_d = get_estado(numero)['datos']
-            candidatos_prev = datos_d.get('stock_multiples_candidatos', [])
-            mat = None; err = None
-            if candidatos_prev and incoming_msg.strip().isdigit():
-                idx = int(incoming_msg.strip()) - 1
-                if 0 <= idx < len(candidatos_prev):
-                    c = candidatos_prev[idx]
-                    mat = tuple(c)
-                    set_dato(numero, 'stock_multiples_candidatos', [])
-                else:
-                    err = f"❌ Número fuera de rango. Elige entre 1 y {len(candidatos_prev)}."
-            else:
-                set_dato(numero, 'stock_multiples_candidatos', [])
-                mat, err = buscar_material_msg(incoming_msg)
-            if err:
-                if isinstance(err, tuple) and err[0] == 'RETALES':
-                    # Devolución de retal — mostrar lista y que elija cuál devuelve
-                    candidatos = err[1]
-                    candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4])] for c in candidatos]
-                    set_dato(numero, 'stock_retales_candidatos', candidatos_serial)
-                    set_paso(numero, 'stock_devol_retales_elegir')
-                    lista_r = '\n'.join([f"*{i}.* {c[1]} — {c[3]} {c[2]}" for i, c in enumerate(candidatos, 1)])
-                    msg.body(
-                        f"📥 *Retales de {incoming_msg}:*\n{lista_r}\n\n"
-                        f"¿Qué retal devuelves? Responde el *número*."
-                    )
-                elif isinstance(err, tuple) and err[0] == 'MULTIPLES':
-                    candidatos = err[1]
-                    texto = err[2]
-                    candidatos_serial = [[c[0], c[1], c[2], float(c[3]), float(c[4]), float(c[5]) if len(c) > 5 and c[5] else 0] for c in candidatos]
-                    set_dato(numero, 'stock_multiples_candidatos', candidatos_serial)
-                    set_paso(numero, 'stock_devol_material')
-                    msg.body(texto)
-                else:
-                    msg.body(err if isinstance(err, str) else str(err))
-            else:
-                set_dato(numero, 'stock_mat_tmp', {'id': mat[0], 'nombre': mat[1], 'unidad': mat[2]})
-                set_paso(numero, 'stock_devol_cantidad')
-                msg.body(f"📥 *{mat[1]}*\n¿Qué *cantidad* devuelves?")
-
-    elif paso == 'stock_devol_retales_elegir':
-        datos_d = get_estado(numero)['datos']
-        candidatos = [tuple(c) for c in datos_d.get('stock_retales_candidatos', [])]
-        try:
+            # Intentar parsear "nombre — cantidad unidad" en una sola línea
             import re as _re
-            nums_str = _re.findall(r'\d+', incoming_msg)
-            seleccionados_idx = [int(n)-1 for n in nums_str if 0 < int(n) <= len(candidatos)]
-            if not seleccionados_idx:
-                msg.body(f"Responde el número del retal (1-{len(candidatos)}).")
-            else:
+            texto_limpio = incoming_msg.strip()
+            # Patrón: texto — número [unidad]  o  texto: número [unidad]
+            m = _re.match(r'^(.+?)[\s\-–:]+(\d+[\.,]?\d*)\s*([a-zA-Záéíóúüñ²³/]+)?$', texto_limpio)
+            if m:
+                nombre_mat = m.group(1).strip()
+                cantidad = float(m.group(2).replace(',','.'))
+                unidad = m.group(3).strip() if m.group(3) else 'ud'
+                datos_d = get_estado(numero)['datos']
                 lineas = datos_d.get('stock_lineas', [])
-                for idx in seleccionados_idx:
-                    c = candidatos[idx]
-                    lineas.append({'material': c[1], 'cantidad': float(c[3]), 'unidad': c[2], 'material_id': c[0]})
+                lineas.append({'material': nombre_mat, 'cantidad': cantidad, 'unidad': unidad, 'material_id': None})
                 set_dato(numero, 'stock_lineas', lineas)
-                set_paso(numero, 'stock_devol_material')
-                añadidos = ', '.join([candidatos[i][1] for i in seleccionados_idx])
                 msg.body(
-                    f"✅ Añadido: *{añadidos}*\n\n"
-                    f"¿Otro material? Escribe el nombre o di *listo* para terminar."
+                    f"✅ *{nombre_mat}* — {fmt_cant(cantidad)} {unidad}\n\n"
+                    f"¿Otro material? Escribe nombre o di *listo*."
                 )
-        except:
-            msg.body(f"Responde el número del retal. Ejemplo: *1* o *1,2*")
+            else:
+                # Solo el nombre — pedir cantidad
+                set_dato(numero, 'stock_mat_tmp', {'nombre': texto_limpio, 'unidad': 'ud'})
+                set_paso(numero, 'stock_devol_cantidad')
+                msg.body(f"📥 *{texto_limpio}*\n¿Qué *cantidad* devuelves? _(número y unidad, ej: 12 m)_")
 
     elif paso == 'stock_devol_cantidad':
-        try:
-            cantidad = float(incoming_msg.replace(',','.'))
-            if cantidad <= 0:
-                msg.body("La cantidad debe ser mayor que 0.")
-            else:
-                datos_d = get_estado(numero)['datos']
-                mat_tmp = datos_d.get('stock_mat_tmp', {})
-                lineas = datos_d.get('stock_lineas', [])
-                lineas.append({'material': mat_tmp['nombre'], 'cantidad': cantidad, 'unidad': mat_tmp['unidad'], 'material_id': mat_tmp['id']})
-                set_dato(numero, 'stock_lineas', lineas)
-                set_paso(numero, 'stock_devol_material')
-                msg.body(
-                    f"✅ Añadido: *{mat_tmp['nombre']}* — {cantidad} {mat_tmp['unidad']}\n\n"
-                    f"¿Otro material? Escribe el nombre o di *listo* para terminar."
-                )
-        except:
-            msg.body("Escribe solo el número. Ejemplo: *10* o *2.5*")
+        import re as _re
+        texto_cant = incoming_msg.strip()
+        m = _re.match(r'^(\d+[\.,]?\d*)\s*([a-zA-Záéíóúüñ²³/]+)?$', texto_cant)
+        if m:
+            cantidad = float(m.group(1).replace(',','.'))
+            unidad = m.group(2).strip() if m.group(2) else 'ud'
+            datos_d = get_estado(numero)['datos']
+            mat_tmp = datos_d.get('stock_mat_tmp', {})
+            lineas = datos_d.get('stock_lineas', [])
+            lineas.append({'material': mat_tmp.get('nombre',''), 'cantidad': cantidad, 'unidad': unidad, 'material_id': None})
+            set_dato(numero, 'stock_lineas', lineas)
+            set_paso(numero, 'stock_devol_material')
+            msg.body(
+                f"✅ *{mat_tmp.get('nombre','')}* — {fmt_cant(cantidad)} {unidad}\n\n"
+                f"¿Otro material? Escribe nombre o di *listo*."
+            )
+        else:
+            msg.body("Escribe la cantidad. Ej: *12 m* o *5 ud*")
 
     elif paso == 'stock_devol_confirmar':
         if es_confirmacion(incoming_msg):
             datos_d = get_estado(numero)['datos']
             lineas = datos_d.get('stock_lineas', [])
             nombre_op = datos_d.get('nombre_operario', nombre_operario(numero))
+            obra_proc = datos_d.get('stock_devol_obra_txt', 'Sin especificar')
             borrar_estado(numero)
             import threading as _th
             def _procesar_devolucion():
                 numero_alb = siguiente_numero_albaran()
                 from datetime import datetime as dt
                 fecha_str = dt.now().strftime('%d/%m/%Y %H:%M')
-                aid = crear_albaran(numero_alb, numero, nombre_op, 'DEVOLUCIÓN A ALMACÉN', lineas)
+                obra_label = f"DEVOLUCIÓN — {obra_proc}"
+                aid = crear_albaran(numero_alb, numero, nombre_op, obra_label, lineas)
                 for l in lineas:
-                    ajustar_stock(l['material_id'], l['cantidad'])
-                    registrar_movimiento('devolucion', l['material_id'], l['material'], l['cantidad'],
-                        l['unidad'], numero, nombre_op, '', aid)
-                pdf_bytes = generar_pdf_albaran({
+                    # Solo ajustar stock si tiene material_id (material conocido en BD)
+                    if l.get('material_id'):
+                        ajustar_stock(l['material_id'], l['cantidad'])
+                        registrar_movimiento('devolucion', l['material_id'], l['material'], l['cantidad'],
+                            l['unidad'], numero, nombre_op, obra_label, aid)
+                pdf_bytes_dev = generar_pdf_albaran({
                     'numero': numero_alb, 'nombre_operario': nombre_op,
-                    'obra': 'DEVOLUCIÓN A ALMACÉN', 'lineas': lineas, 'fecha': fecha_str, 'tipo': 'devolucion'
+                    'obra': obra_label, 'lineas': lineas, 'fecha': fecha_str, 'tipo': 'devolucion'
                 })
-                pdf_url = subir_pdf_albaran(pdf_bytes, numero_alb)
+                pdf_url = subir_pdf_albaran(pdf_bytes_dev, numero_alb)
                 op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
                 resumen_txt = '\n'.join([f"• {l['material']} — {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
                 texto = (
                     f"✅ *Albarán devolución {numero_alb}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📥 Material devuelto al almacén\n{resumen_txt}\n"
+                    f"📥 Material devuelto al almacén\n"
+                    f"🏗️ Obra: {obra_proc}\n"
+                    f"{resumen_txt}\n"
                     f"━━━━━━━━━━━━━━━━━━━━"
+                    + (f"\n📄 PDF: {pdf_url}" if pdf_url else "")
                 )
-                enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
-                enviar_whatsapp(SUPERVISOR_WA, f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n{resumen_txt}",
-                    media_url=pdf_url if pdf_url else None)
+                enviar_whatsapp(op_wa, texto)
+                enviar_whatsapp(SUPERVISOR_WA,
+                    f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}"
+                    + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
+                # Email con PDF adjunto
+                try:
+                    nombre_pdf_dev = f"Albaran_Devolucion_{numero_alb.replace('/','_').replace('-','_')}.pdf"
+                    msg_email_dev = MIMEMultipart()
+                    msg_email_dev['From']    = GMAIL_USER
+                    msg_email_dev['To']      = ', '.join([SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2])
+                    msg_email_dev['Subject'] = f"[DEVOLUCIÓN ALMACÉN] {numero_alb} — {nombre_op} — {obra_proc}"
+                    body_dev = (
+                        f"Devolución a almacén registrada.\n\n"
+                        f"Albarán: {numero_alb}\n"
+                        f"Operario: {nombre_op}\n"
+                        f"Obra procedencia: {obra_proc}\n"
+                        f"Fecha: {fecha_str}\n\n"
+                        f"Materiales devueltos:\n" +
+                        '\n'.join([f"  - {l['material']}: {fmt_cant(l['cantidad'])} {l['unidad']}" for l in lineas])
+                    )
+                    msg_email_dev.attach(MIMEText(body_dev, 'plain'))
+                    part_dev = MIMEApplication(pdf_bytes_dev, Name=nombre_pdf_dev)
+                    part_dev.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf_dev}"')
+                    msg_email_dev.attach(part_dev)
+                    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
+                        srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+                        srv.sendmail(GMAIL_USER, [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2], msg_email_dev.as_string())
+                    print(f"Email devolución OK — {numero_alb}")
+                except Exception as e_mail:
+                    print(f"Error email devolución: {e_mail}")
             _th.Thread(target=_procesar_devolucion, daemon=True).start()
             msg.body("✅ Devolución registrada. Stock actualizado. Te envío el albarán en un momento.")
         elif es_cancelacion(incoming_msg):
@@ -3579,30 +3616,25 @@ def generar_pdf_resumen_mes(datos):
 
 
 def subir_pdf_resumen_mes(pdf_bytes, rid):
-    """Sube el PDF a Cloudinary y devuelve la URL."""
+    """Guarda el PDF en la BD y devuelve la URL pública del bot (sin Cloudinary)."""
     try:
-        import cloudinary, cloudinary.uploader
-        cloudinary.config(
-            cloud_name=os.environ.get('CLOUDINARY_CLOUD_NAME',''),
-            api_key=os.environ.get('CLOUDINARY_API_KEY',''),
-            api_secret=os.environ.get('CLOUDINARY_API_SECRET','')
-        )
-        import base64 as _b64
-        b64 = _b64.b64encode(pdf_bytes).decode()
-        result = cloudinary.uploader.upload(
-            f"data:application/pdf;base64,{b64}",
-            public_id=f"resumen_mes_{rid}",
-            resource_type='raw',
-            folder='instapalma_resumenes'
-        )
-        return result.get('secure_url','')
+        BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
+        ref = f"RESUMEN-MES-{rid}"
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO stock_albaranes (numero, pdf_bytes)
+            VALUES (%s, %s)
+            ON CONFLICT (numero) DO UPDATE SET pdf_bytes = %s
+        """, (ref, psycopg2.Binary(pdf_bytes), psycopg2.Binary(pdf_bytes)))
+        conn.commit(); cur.close(); conn.close()
+        return f"https://{BOT_URL}/albaran/{ref}.pdf"
     except Exception as e:
-        print(f"Error subir PDF resumen: {e}")
+        print(f"Error guardar PDF resumen mes: {e}")
         return ''
 
 
 def finalizar_resumen_mes(numero, datos):
-    """Guarda, genera PDF y envía a supervisor y operario."""
+    """Guarda, genera PDF, envía por WhatsApp (URL) y por email con adjunto."""
     import threading
     def _enviar():
         rid = guardar_resumen_mes(datos, numero)
@@ -3612,7 +3644,7 @@ def finalizar_resumen_mes(numero, datos):
         dias_vac = datos.get('dias_vacaciones','0')
         gastos = datos.get('total_gastos','0')
 
-        texto = (
+        texto_wa = (
             f"📊 *RESUMEN FIN DE MES #{rid}*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📅 Mes: {mes}\n"
@@ -3623,15 +3655,41 @@ def finalizar_resumen_mes(numero, datos):
             f"━━━━━━━━━━━━━━━━━━━━"
         )
 
-        # Generar y subir PDF
-        pdf_bytes = generar_pdf_resumen_mes(datos)
-        pdf_url = subir_pdf_resumen_mes(pdf_bytes, rid)
+        # Generar PDF
+        pdf_bytes_data = generar_pdf_resumen_mes(datos)
+        pdf_url = subir_pdf_resumen_mes(pdf_bytes_data, rid)
 
-        # Enviar al supervisor
-        enviar_whatsapp(SUPERVISOR_WA, texto, media_url=pdf_url if pdf_url else None)
+        # Enviar por WhatsApp al supervisor con enlace al PDF
+        enviar_whatsapp(SUPERVISOR_WA, texto_wa + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
         # Enviar al operario
         op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
-        enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente. Aquí tienes tu copia:", media_url=pdf_url if pdf_url else None)
+        enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente." + (f"\n📄 Tu copia: {pdf_url}" if pdf_url else ""))
+
+        # Enviar por email con PDF adjunto
+        try:
+            nombre_pdf = f"Resumen_Mes_{nombre_op.replace(' ','_')}_{mes.replace(' ','_')}.pdf"
+            msg_email = MIMEMultipart()
+            msg_email['From']    = GMAIL_USER
+            msg_email['To']      = ', '.join([SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2])
+            msg_email['Subject'] = f"[RESUMEN MES] {nombre_op} — {mes}"
+            body_txt = (
+                f"Resumen de fin de mes recibido.\n\n"
+                f"Operario: {nombre_op}\n"
+                f"Mes: {mes}\n"
+                f"Horas extra: {horas}\n"
+                f"Días vacaciones: {dias_vac}\n"
+                f"Total gastos: {gastos} €\n"
+            )
+            msg_email.attach(MIMEText(body_txt, 'plain'))
+            part = MIMEApplication(pdf_bytes_data, Name=nombre_pdf)
+            part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
+            msg_email.attach(part)
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as srv:
+                srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+                srv.sendmail(GMAIL_USER, [SUPERVISOR_EMAIL_1, SUPERVISOR_EMAIL_2], msg_email.as_string())
+            print(f"Email resumen mes OK — {nombre_op} {mes}")
+        except Exception as e:
+            print(f"Error email resumen mes: {e}")
 
     t = threading.Thread(target=_enviar, daemon=True)
     t.start()
@@ -4499,15 +4557,17 @@ def generar_pdf_albaran(albaran):
     return buffer.getvalue()
 
 def subir_pdf_albaran(pdf_bytes, numero):
-    """Guarda el PDF en la BD y devuelve la URL pública del endpoint propio."""
+    """Guarda el PDF en la BD (upsert) y devuelve la URL pública del bot."""
     try:
         BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
         numero_safe = numero.replace('/', '_').replace(' ', '_')
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            UPDATE stock_albaranes SET pdf_bytes = %s WHERE numero = %s
-        """, (psycopg2.Binary(pdf_bytes), numero))
+            INSERT INTO stock_albaranes (numero, pdf_bytes)
+            VALUES (%s, %s)
+            ON CONFLICT (numero) DO UPDATE SET pdf_bytes = EXCLUDED.pdf_bytes
+        """, (numero, psycopg2.Binary(pdf_bytes)))
         conn.commit(); cur.close(); conn.close()
         return f"https://{BOT_URL}/albaran/{numero_safe}.pdf"
     except Exception as e:
