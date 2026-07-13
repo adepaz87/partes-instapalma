@@ -3068,6 +3068,16 @@ def admin_truncate_albaranes():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/truncate-resumenes', methods=['POST'])
+def admin_truncate_resumenes():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE resumen_mes RESTART IDENTITY")
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'msg': 'Resúmenes de fin de mes borrados'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/truncate-vehiculos', methods=['POST'])
 def admin_truncate_vehiculos():
     try:
