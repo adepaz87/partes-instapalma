@@ -2692,7 +2692,7 @@ def listar_partes():
         try:
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY created_at DESC LIMIT 200")
+            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY TO_DATE(fecha, 'DD/MM/YYYY') DESC, created_at DESC LIMIT 200")
             rows = cur.fetchall()
             cur.close(); conn.close()
             partes = [{'id':r[0],'numero_parte':r[1],'fecha':r[2],'operario':r[3],'cliente':r[4],'obra':r[5],'operarios':r[6],'albaranes':r[7],'material_stock':r[8],'devolucion_almacen':r[9],'descripcion':r[10],'terminado':r[11],'tiempo_restante':r[12],'created_at':str(r[13])} for r in rows]
@@ -2703,7 +2703,7 @@ def listar_partes():
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, terminado, tiempo_restante, created_at, pdf_descargado, pdf_descargado_at FROM partes ORDER BY created_at DESC LIMIT 200")
+        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, terminado, tiempo_restante, created_at, pdf_descargado, pdf_descargado_at FROM partes ORDER BY TO_DATE(fecha, 'DD/MM/YYYY') DESC, created_at DESC LIMIT 200")
         rows = cur.fetchall()
         cur.close(); conn.close()
     except:
