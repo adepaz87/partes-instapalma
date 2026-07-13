@@ -2494,9 +2494,8 @@ def webhook():
                     f"🏗️ Obra: {obra_proc}\n"
                     f"{resumen_txt}\n"
                     f"━━━━━━━━━━━━━━━━━━━━"
-                    + (f"\n📄 PDF: {pdf_url}" if pdf_url else "")
                 )
-                enviar_whatsapp(op_wa, texto)
+                enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
                 enviar_whatsapp(SUPERVISOR_WA,
                     f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}"
                     + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
