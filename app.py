@@ -3025,6 +3025,38 @@ def admin_truncate():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/insert-partes', methods=['POST'])
+def admin_insert_partes():
+    try:
+        datos = request.json  # lista de partes
+        conn = get_db(); cur = conn.cursor()
+        count = 0
+        for p in datos:
+            cur.execute(
+                """INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios,
+                    albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    p.get('numero_parte',''),
+                    p.get('fecha',''),
+                    p.get('operario',''),
+                    p.get('cliente',''),
+                    p.get('obra',''),
+                    p.get('operarios',''),
+                    p.get('albaranes',''),
+                    p.get('material_stock',''),
+                    p.get('devolucion_almacen',''),
+                    p.get('descripcion',''),
+                    p.get('terminado',''),
+                    p.get('tiempo_restante','')
+                )
+            )
+            count += 1
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'insertados': count}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/truncate-albaranes', methods=['POST'])
 def admin_truncate_albaranes():
     try:
