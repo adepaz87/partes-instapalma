@@ -2497,8 +2497,8 @@ def webhook():
                 )
                 enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
                 enviar_whatsapp(SUPERVISOR_WA,
-                    f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}"
-                    + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
+                    f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}",
+                    media_url=pdf_url if pdf_url else None)
                 # Email con PDF adjunto
                 try:
                     nombre_pdf_dev = f"Albaran_Devolucion_{numero_alb.replace('/','_').replace('-','_')}.pdf"
