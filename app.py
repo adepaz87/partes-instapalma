@@ -3025,6 +3025,27 @@ def admin_truncate():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/truncate-albaranes', methods=['POST'])
+def admin_truncate_albaranes():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE stock_albaranes RESTART IDENTITY")
+        cur.execute("TRUNCATE TABLE stock_movimientos RESTART IDENTITY")
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'msg': 'Albaranes y movimientos borrados'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
+@app.route('/admin/truncate-vehiculos', methods=['POST'])
+def admin_truncate_vehiculos():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("TRUNCATE TABLE vehiculos RESTART IDENTITY CASCADE")
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'msg': 'Registros de vehículos borrados'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/schema', methods=['GET'])
 def admin_schema():
     try:
