@@ -2453,10 +2453,32 @@ def webhook():
                 obra_label = f"DEVOLUCIÓN — {obra_proc}"
                 aid = crear_albaran(numero_alb, numero, nombre_op, obra_label, lineas)
                 for l in lineas:
-                    # Solo ajustar stock si tiene material_id (material conocido en BD)
-                    if l.get('material_id'):
-                        ajustar_stock(l['material_id'], l['cantidad'])
-                        registrar_movimiento('devolucion', l['material_id'], l['material'], l['cantidad'],
+                    mat_id = l.get('material_id')
+                    # Si no tiene material_id, buscar en BD por nombre exacto/aproximado
+                    if not mat_id:
+                        r = get_material_by_nombre(l['material'])
+                        if isinstance(r, tuple):
+                            mat_id = r[0]
+                        elif isinstance(r, list) and len(r) == 1:
+                            mat_id = r[0][0]
+                    # Si sigue sin encontrarse, crear el artículo en BD
+                    if not mat_id:
+                        try:
+                            conn_c = get_db(); cur_c = conn_c.cursor()
+                            cur_c.execute(
+                                "INSERT INTO stock_materiales (nombre, unidad, stock_actual, stock_minimo) "
+                                "VALUES (%s, %s, 0, 0) RETURNING id",
+                                (l['material'], l['unidad'])
+                            )
+                            mat_id = cur_c.fetchone()[0]
+                            conn_c.commit(); cur_c.close(); conn_c.close()
+                            print(f"Artículo creado en BD: {l['material']} (id={mat_id})")
+                        except Exception as e_ins:
+                            print(f"Error creando artículo {l['material']}: {e_ins}")
+                    # Ajustar stock y registrar movimiento
+                    if mat_id:
+                        ajustar_stock(mat_id, l['cantidad'])
+                        registrar_movimiento('devolucion', mat_id, l['material'], l['cantidad'],
                             l['unidad'], numero, nombre_op, obra_label, aid)
                 pdf_bytes_dev = generar_pdf_albaran({
                     'numero': numero_alb, 'nombre_operario': nombre_op,
