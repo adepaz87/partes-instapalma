@@ -128,6 +128,13 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Migraciones de columnas
+        try:
+            cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_inicio TYPE VARCHAR(50)")
+            cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_fin TYPE VARCHAR(50)")
+            cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_solicitud TYPE VARCHAR(50)")
+        except Exception:
+            pass
         conn.commit()
         cur.close()
         conn.close()
