@@ -1295,8 +1295,7 @@ def webhook():
         ok, respuesta = herramienta_alta_obra(nombre_herr, obra_herr, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            enviar_whatsapp(SUPERVISOR_WA,
-                f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
+            enviar_supervisor(f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_baja_nombre':
@@ -1314,8 +1313,7 @@ def webhook():
         ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            enviar_whatsapp(SUPERVISOR_WA,
-                f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
+            enviar_supervisor(f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_nueva_cantidad':
@@ -1342,8 +1340,7 @@ def webhook():
             stock_total = _cur.fetchone()[0]
             _c.commit(); _cur.close(); _c.close()
             msg.body(f"✅ *{nombre_nueva.capitalize()}* añadida al almacén.\n📦 Stock actual: {int(stock_total)} ud.")
-            enviar_whatsapp(SUPERVISOR_WA,
-                f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
+            enviar_supervisor(f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
         except Exception as _e:
             msg.body(f"❌ Error al guardar: {_e}")
         return str(resp) if not use_meta else ('OK', 200)
