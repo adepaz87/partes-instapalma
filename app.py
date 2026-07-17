@@ -620,6 +620,44 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
     except Exception as e:
         print(f"Error WA: {e}")
 
+def enviar_via_meta(destino_num, mensaje, media_url=None):
+    """Envía mensaje via Meta Cloud API. destino_num: número sin whatsapp: ni +, ej '34690875940'"""
+    import requests as _req, os as _os
+    token = _os.environ.get('META_TOKEN','')
+    phone_id = _os.environ.get('META_PHONE_ID','')
+    if not token or not phone_id:
+        print('enviar_via_meta: faltan META_TOKEN o META_PHONE_ID')
+        return
+    num = destino_num.replace('whatsapp:','').replace('+','').strip()
+    url = f'https://graph.facebook.com/v19.0/{phone_id}/messages'
+    headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+    if media_url:
+        payload = {
+            'messaging_product': 'whatsapp',
+            'to': num,
+            'type': 'image',
+            'image': {'link': media_url, 'caption': mensaje}
+        }
+    else:
+        payload = {
+            'messaging_product': 'whatsapp',
+            'to': num,
+            'type': 'text',
+            'text': {'body': mensaje}
+        }
+    try:
+        r = _req.post(url, headers=headers, json=payload, timeout=10)
+        if r.status_code == 200:
+            print(f'Meta WA enviado OK a {num}')
+        else:
+            print(f'Error Meta WA: {r.status_code} {r.text[:100]}')
+    except Exception as e:
+        print(f'Error Meta WA: {e}')
+
+def enviar_supervisor(mensaje, media_url=None):
+    """Envía mensaje al supervisor (Alberto) siempre via Meta."""
+    enviar_via_meta('34690875940', mensaje, media_url=media_url)
+
 def generar_resumen(datos):
     ops  = datos.get('operarios', 'Ninguno')
     albs = datos.get('albaranes', 'Ninguno')
@@ -670,7 +708,7 @@ def finalizar_parte(numero, datos):
         f"🏁 Terminado: {linea_term}\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
-    enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
+    enviar_supervisor(msg_supervisor)
 
     # Guardar en base de datos y obtener el ID para la URL del PDF
     parte_id = guardar_parte(datos, numero)
@@ -688,7 +726,7 @@ def finalizar_parte(numero, datos):
             f"🏢 {_clean(datos['cliente'])} | 🔨 {_clean(datos['obra'])}\n"
             f"🏁 {linea_term}"
         )
-        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        enviar_supervisor(caption, media_url=pdf_url)
         operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
         enviar_whatsapp(operario_wa,
                         f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
@@ -1046,7 +1084,7 @@ def finalizar_vehiculo(numero, datos):
     if vid:
         pdf_url = f"https://{BOT_URL}/vehiculos/{vid}/pdf"
         caption = f"Parte Vehiculo - {mat} - {mes}\nKm: {datos.get('km_inicio','')} a {datos.get('km_fin','')}"
-        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        enviar_supervisor(caption, media_url=pdf_url)
         op_wa = numero if numero.startswith("whatsapp:") else f"whatsapp:{numero}"
         enviar_whatsapp(op_wa, "Parte de vehiculo enviado. Aqui tienes tu copia:", media_url=pdf_url)
 
@@ -2329,8 +2367,7 @@ def webhook():
                 )
                 enviar_whatsapp(op_wa, texto)
                 # Enviar al supervisor
-                enviar_whatsapp(SUPERVISOR_WA,
-                    f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}"
+                enviar_supervisor(f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}"
                     + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
                 # Email con PDF adjunto
                 try:
@@ -2503,8 +2540,7 @@ def webhook():
                     f"━━━━━━━━━━━━━━━━━━━━"
                 )
                 enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
-                enviar_whatsapp(SUPERVISOR_WA,
-                    f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}",
+                enviar_supervisor(f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}",
                     media_url=pdf_url if pdf_url else None)
                 # Email con PDF adjunto
                 try:
@@ -2621,8 +2657,7 @@ def webhook():
             op_nombre = datos_vac.get('nombre_operario', nombre_operario(numero))
             # Notificar a Alberto
             if vac_id:
-                enviar_whatsapp(
-                    SUPERVISOR_WA,
+                enviar_supervisor(
                     f"🌴 *SOLICITUD DE VACACIONES #{vac_id}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"👷 {op_nombre}\n"
