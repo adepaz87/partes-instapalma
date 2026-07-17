@@ -1370,9 +1370,9 @@ def webhook():
                 subir_pdf_albaran(pdf_bytes, ref)
                 pdf_url = f"https://bot-production-66b8.up.railway.app/albaran/{ref}.pdf"
                 texto = f"📊 *{titulo}*\n\nListado generado."
-                enviar_whatsapp(SUPERVISOR_WA, texto, media_url=pdf_url)
+                enviar_supervisor(texto, media_url=pdf_url)
             except Exception as e:
-                enviar_whatsapp(SUPERVISOR_WA, f"❌ Error generando listado: {e}")
+                enviar_supervisor(f"❌ Error generando listado: {e}")
         _th.Thread(target=_gen_listado, daemon=True).start()
         msg.body("⏳ Generando PDF de stock, te lo envío en un momento...")
         return str(resp) if not use_meta else ('OK', 200)
@@ -2397,7 +2397,7 @@ def webhook():
                     print(f"Error email salida almacén: {e_mail_sal}")
                 # Alertas de stock bajo
                 for a in alertas:
-                    enviar_whatsapp(SUPERVISOR_WA, a)
+                    enviar_supervisor(a)
             _th.Thread(target=_procesar_salida, daemon=True).start()
             msg.body(f"✅ Salida registrada. Te envío el albarán en un momento.")
         elif es_cancelacion(incoming_msg):
