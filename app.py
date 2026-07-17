@@ -2329,7 +2329,8 @@ def webhook():
                 )
                 enviar_whatsapp(op_wa, texto)
                 # Enviar al supervisor
-                enviar_supervisor(f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}"
+                enviar_whatsapp(SUPERVISOR_WA,
+                    f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}"
                     + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
                 # Email con PDF adjunto
                 try:
@@ -2502,7 +2503,8 @@ def webhook():
                     f"━━━━━━━━━━━━━━━━━━━━"
                 )
                 enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
-                enviar_supervisor(f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}",
+                enviar_whatsapp(SUPERVISOR_WA,
+                    f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}",
                     media_url=pdf_url if pdf_url else None)
                 # Email con PDF adjunto
                 try:
@@ -2619,7 +2621,7 @@ def webhook():
             op_nombre = datos_vac.get('nombre_operario', nombre_operario(numero))
             # Notificar a Alberto
             if vac_id:
-                enviar_supervisor(
+                enviar_whatsapp(SUPERVISOR_WA,
                     f"🌴 *SOLICITUD DE VACACIONES #{vac_id}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"👷 {op_nombre}\n"
