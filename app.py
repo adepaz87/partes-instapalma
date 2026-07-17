@@ -3783,7 +3783,7 @@ def finalizar_resumen_mes(numero, datos):
         pdf_url = subir_pdf_resumen_mes(pdf_bytes_data, rid)
 
         # Enviar por WhatsApp al supervisor con enlace al PDF
-        enviar_whatsapp(SUPERVISOR_WA, texto_wa + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
+        enviar_supervisor(texto_wa + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""
         # Enviar al operario
         op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
         enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente." + (f"\n📄 Tu copia: {pdf_url}" if pdf_url else ""))
