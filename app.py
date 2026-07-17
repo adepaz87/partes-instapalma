@@ -5023,6 +5023,11 @@ def pdf_albaran(aid):
         headers={'Content-Disposition': f'attachment; filename="{nombre_f}"'})
 
 
+@app.route('/admin/test-supervisor')
+def test_supervisor():
+    enviar_supervisor("Prueba de canal supervisor - El envio via Meta API esta funcionando. Los partes completados llegaran por aqui.")
+    return "Mensaje enviado al supervisor via Meta API", 200
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
