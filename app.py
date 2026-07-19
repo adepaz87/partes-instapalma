@@ -610,7 +610,7 @@ def enviar_email_con_pdf(destinatario, asunto, cuerpo, pdf_bytes, nombre_pdf):
     from email.mime.base import MIMEBase
     from email import encoders
     GMAIL_USER_L = os.environ.get('GMAIL_USER', '')
-    GMAIL_PASS_L = os.environ.get('GMAIL_PASSWORD', '')
+    GMAIL_PASS_L = os.environ.get('GMAIL_APP_PASSWORD', '')
     if not GMAIL_USER_L or not GMAIL_PASS_L:
         print("Email no configurado")
         return
