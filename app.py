@@ -602,6 +602,34 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
         print(f"Error enviando email: {e}")
         return False
 
+def enviar_email_con_pdf(destinatario, asunto, cuerpo, pdf_bytes, nombre_pdf):
+    """Envía un email con PDF adjunto vía Gmail SMTP."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.base import MIMEBase
+    from email import encoders
+    GMAIL_USER_L = os.environ.get('GMAIL_USER', '')
+    GMAIL_PASS_L = os.environ.get('GMAIL_PASSWORD', '')
+    if not GMAIL_USER_L or not GMAIL_PASS_L:
+        print("Email no configurado")
+        return
+    msg_email = MIMEMultipart()
+    msg_email['From'] = GMAIL_USER_L
+    msg_email['To'] = destinatario
+    msg_email['Subject'] = asunto
+    msg_email.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
+    part = MIMEBase('application', 'octet-stream')
+    part.set_payload(pdf_bytes)
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', f'attachment; filename="{nombre_pdf}"')
+    msg_email.attach(part)
+    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        server.login(GMAIL_USER_L, GMAIL_PASS_L)
+        server.sendmail(GMAIL_USER_L, destinatario, msg_email.as_string())
+    print(f"Email enviado OK a {destinatario}: {asunto}")
+
+
 def enviar_whatsapp(destino, mensaje, media_url=None):
     try:
         from twilio.rest import Client
