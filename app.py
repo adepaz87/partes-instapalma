@@ -291,7 +291,8 @@ MENU_PRINCIPAL = (
     "5️⃣ Herramienta\n"
     "6️⃣ Vacaciones\n"
     "7️⃣ Resumen fin de mes\n"
-    "8️⃣ Vehículos\n\n"
+    "8️⃣ Vehículos\n"
+    "9️⃣ Mantenimiento GE (TBSA)\n\n"
     "_Escribe el número o la palabra clave directamente_"
 )
 
@@ -698,6 +699,22 @@ def finalizar_parte(numero, datos):
 
 
 MENSAJES_VEHICULO   = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+MENSAJES_MANTTO     = ['mantenimiento', 'mantto', 'grupo electrogeno', 'grupo electrógeno', 'generador', 'ge tbsa', 'tbsa']
+LOCALIZACIONES_GE   = ['Spar Mederos', 'Spar El Paso', 'Spar Triana', 'Central de Servicios', 'Grupo Móvil']
+CHECKLIST_GE = [
+    'Nivel aceite', 'Nivel refrigerante', 'Nivel combustible',
+    'Estado batería', 'Tensión batería', 'Cargador batería',
+    'Bornes', 'Correas', 'Manguitos', 'Fugas',
+    'Filtro aire', 'Escape', 'Ventilación', 'Alternador',
+    'Cuadro control', 'Alarmas', 'Arranque auto', 'Parada auto',
+    'ATS', 'Prueba carga',
+]
+MEDICIONES_GE = [
+    'L1-L2 (V)', 'L2-L3 (V)', 'L3-L1 (V)',
+    'L1-N (V)', 'L2-N (V)', 'L3-N (V)',
+    'Frecuencia (Hz)', 'I L1 (A)', 'I L2 (A)', 'I L3 (A)',
+    'Presión aceite', 'Temp. motor',
+]
 MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
 MENSAJES_RESUMEN_MES = ['resumen mes', 'resumen del mes', 'resumen mensual', 'cierre mes', 'cierre del mes', 'resumen fin de mes', 'fin de mes']
 MENSAJES_STOCK_SALIDA   = ['salida']
@@ -885,6 +902,183 @@ def guardar_vehiculo(datos, numero_operario):
                 conn.close()
         except:
             pass
+
+def guardar_mantenimiento_ge(datos, numero_operario):
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mantenimiento_ge (
+                id SERIAL PRIMARY KEY,
+                fecha VARCHAR(20),
+                localizacion VARCHAR(100),
+                marca VARCHAR(100),
+                modelo VARCHAR(100),
+                horas VARCHAR(50),
+                checklist JSONB,
+                mediciones JSONB,
+                observaciones_generales TEXT,
+                operario VARCHAR(100),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        conn.commit()
+        checklist_json = json.dumps(datos.get('checklist', {}), ensure_ascii=False)
+        mediciones_json = json.dumps(datos.get('mediciones', {}), ensure_ascii=False)
+        cur.execute("""
+            INSERT INTO mantenimiento_ge
+                (fecha, localizacion, marca, modelo, horas, checklist, mediciones, observaciones_generales, operario)
+            VALUES (%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s)
+            RETURNING id
+        """, (
+            datos.get('fecha', ''),
+            datos.get('localizacion', ''),
+            datos.get('marca', ''),
+            datos.get('modelo', ''),
+            datos.get('horas', ''),
+            checklist_json,
+            mediciones_json,
+            datos.get('observaciones_generales', ''),
+            nombre_operario(numero_operario),
+        ))
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+        return row[0] if row else None
+    except Exception as e:
+        print(f"Error guardar_mantenimiento_ge: {e}")
+        if conn:
+            try: conn.rollback()
+            except: pass
+        return None
+
+
+def generar_pdf_mantenimiento_ge(datos):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=1.5*cm, leftMargin=1.5*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+    AZUL  = colors.HexColor('#1a3a5c')
+    VERDE = colors.HexColor('#2e7d32')
+    ROJO  = colors.HexColor('#c62828')
+    GRIS  = colors.HexColor('#f5f5f5')
+    GRIS2 = colors.HexColor('#e0e0e0')
+
+    titulo_style = ParagraphStyle('t', fontSize=14, textColor=AZUL, alignment=TA_CENTER, fontName='Helvetica-Bold')
+    sec_style    = ParagraphStyle('s', fontSize=9, textColor=colors.white, backColor=AZUL,
+                                  fontName='Helvetica-Bold', spaceAfter=0, spaceBefore=6, borderPad=4)
+    pie_style    = ParagraphStyle('p', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+    normal_style = ParagraphStyle('n', fontSize=9, fontName='Helvetica')
+
+    import os as _os
+    LOGO_PATH = _os.path.join(_os.path.dirname(__file__), 'logo.jpg')
+    if _os.path.exists(LOGO_PATH):
+        _lw = 4*cm; _lh = _lw / (1024/219)
+        logo_img = RLImage(LOGO_PATH, width=_lw, height=_lh)
+    else:
+        logo_img = Paragraph("INSTAPALMA", titulo_style)
+
+    cab_t = ParagraphStyle('ct', fontName='Helvetica-Bold', fontSize=13, textColor=AZUL, alignment=1, leading=18)
+    cab = Table([[logo_img, Paragraph('CHECK LIST MANTENIMIENTO\nGRUPO ELECTRÓGENO', cab_t)]], colWidths=[5*cm, 12*cm])
+    cab.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+    elements.append(cab)
+    elements.append(HRFlowable(width="100%", thickness=2, color=AZUL, spaceAfter=6))
+    elements.append(Spacer(1, 0.3*cm))
+
+    # Cabecera datos generales
+    t_gen = Table([
+        ['Instalación', 'Instapalma SL', 'Ubicación', datos.get('localizacion','')],
+        ['Marca', datos.get('marca',''), 'Modelo', datos.get('modelo','')],
+        ['Fecha', datos.get('fecha',''), 'Horas', datos.get('horas','')],
+        ['Técnico', datos.get('operario',''), '', ''],
+    ], colWidths=[3*cm, 6*cm, 2.5*cm, 5.5*cm])
+    t_gen.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(0,-1),AZUL),('BACKGROUND',(2,0),(2,-1),AZUL),
+        ('TEXTCOLOR',(0,0),(0,-1),colors.white),('TEXTCOLOR',(2,0),(2,-1),colors.white),
+        ('FONTNAME',(0,0),(0,-1),'Helvetica-Bold'),('FONTNAME',(2,0),(2,-1),'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1),9),
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('ROWBACKGROUND',(0,0),(-1,-1),[colors.white, GRIS]),
+    ]))
+    elements.append(t_gen)
+    elements.append(Spacer(1, 0.4*cm))
+
+    # Encabezado checklist
+    elements.append(Paragraph('COMPROBACIONES', sec_style))
+    elements.append(Spacer(1, 0.1*cm))
+
+    checklist = datos.get('checklist', {})
+    filas_chk = [['Comprobación', 'OK', 'NO', 'N/A', 'Observaciones']]
+    for item in CHECKLIST_GE:
+        val = checklist.get(item, {})
+        estado = val.get('estado', '')
+        obs    = val.get('obs', '')
+        ok_  = '✓' if estado == 'ok'  else ''
+        no_  = '✓' if estado == 'no'  else ''
+        na_  = '✓' if estado == 'na'  else ''
+        filas_chk.append([item, ok_, no_, na_, obs])
+
+    t_chk = Table(filas_chk, colWidths=[6*cm, 1.2*cm, 1.2*cm, 1.2*cm, 7.4*cm])
+    estilo_chk = TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),AZUL),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8),
+        ('ALIGN',(1,0),(3,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+        ('ROWBACKGROUND',(0,1),(-1,-1),[colors.white, GRIS]),
+    ])
+    # Colorear filas NO en rojo suave
+    for i, item in enumerate(CHECKLIST_GE, start=1):
+        val = checklist.get(item, {})
+        if val.get('estado') == 'no':
+            estilo_chk.add('BACKGROUND', (0,i), (-1,i), colors.HexColor('#ffebee'))
+    t_chk.setStyle(estilo_chk)
+    elements.append(t_chk)
+    elements.append(Spacer(1, 0.4*cm))
+
+    # Mediciones
+    elements.append(Paragraph('MEDICIONES ELÉCTRICAS', sec_style))
+    elements.append(Spacer(1, 0.1*cm))
+    mediciones = datos.get('mediciones', {})
+    filas_med = [['Parámetro', 'Valor', 'Parámetro', 'Valor']]
+    med_list = [(k, mediciones.get(k, '-')) for k in MEDICIONES_GE]
+    for i in range(0, len(med_list), 2):
+        a = med_list[i]
+        b = med_list[i+1] if i+1 < len(med_list) else ('', '')
+        filas_med.append([a[0], a[1], b[0], b[1]])
+    t_med = Table(filas_med, colWidths=[5*cm, 4*cm, 5*cm, 3*cm])
+    t_med.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),AZUL),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),8),
+        ('ALIGN',(1,0),(1,-1),'CENTER'),('ALIGN',(3,0),(3,-1),'CENTER'),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+        ('BACKGROUND',(2,1),(-1,-1),GRIS),
+        ('ROWBACKGROUND',(0,1),(-1,-1),[colors.white, GRIS]),
+    ]))
+    elements.append(t_med)
+    elements.append(Spacer(1, 0.4*cm))
+
+    # Observaciones generales
+    obs_gen = datos.get('observaciones_generales', '')
+    if obs_gen:
+        elements.append(Paragraph('OBSERVACIONES GENERALES', sec_style))
+        elements.append(Spacer(1, 0.1*cm))
+        elements.append(Paragraph(obs_gen, normal_style))
+        elements.append(Spacer(1, 0.3*cm))
+
+    # Pie
+    elements.append(HRFlowable(width="100%", thickness=1, color=AZUL, spaceAfter=4))
+    elements.append(Paragraph(
+        f"Instapalma SL — Mantenimiento preventivo grupo electrógeno — {datos.get('fecha','')}",
+        pie_style
+    ))
+
+    doc.build(elements)
+    return buffer.getvalue()
+
 
 def generar_pdf_vehiculo(datos):
     buffer = io.BytesIO()
@@ -1138,6 +1332,18 @@ def webhook():
         borrar_estado(numero)
         msg.body("🔄 Conversación reiniciada. Escribe *parte* para comenzar de nuevo.")
         return str(resp)
+
+    # Detectar arranque mantenimiento GE
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_MANTTO):
+        num_limpio_ge2 = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_ge2 = OPERARIOS.get(num_limpio_ge2, '')
+        if nombre_ge2:
+            set_dato(numero, 'nombre_operario', nombre_ge2)
+        set_dato(numero, 'fecha', datetime.now().strftime('%d/%m/%Y'))
+        set_paso(numero, 'ge_localizacion')
+        opciones = '\n'.join(f'{i+1}\ufe0f\u20e3 {l}' for i, l in enumerate(LOCALIZACIONES_GE))
+        msg.body(f"🔧 *Mantenimiento GE — TBSA*\n\nFecha: {datetime.now().strftime('%d/%m/%Y')}\n\n¿Cuál es la *ubicación*?\n\n{opciones}")
+        return str(resp) if not use_meta else ('OK', 200)
 
     # Detectar arranque vehiculo
     if any(p in normalizar(incoming_msg) for p in MENSAJES_VEHICULO):
@@ -1704,6 +1910,15 @@ def webhook():
         elif op == '8':
             set_paso(numero, 'vehiculo_menu')
             msg.body("🚗 *Vehículos*\n\nEscribe *vehiculo* para acceder al módulo de mantenimiento.")
+        elif op == '9':
+            num_limpio_ge = numero.replace('whatsapp:','').replace('+','').strip()
+            nombre_ge = OPERARIOS.get(num_limpio_ge, '')
+            if nombre_ge:
+                set_dato(numero, 'nombre_operario', nombre_ge)
+            set_dato(numero, 'fecha', datetime.now().strftime('%d/%m/%Y'))
+            set_paso(numero, 'ge_localizacion')
+            opciones = '\n'.join(f'{i+1}\ufe0f\u20e3 {l}' for i, l in enumerate(LOCALIZACIONES_GE))
+            msg.body(f"🔧 *Mantenimiento GE — TBSA*\n\nFecha: {datetime.now().strftime('%d/%m/%Y')}\n\n1️⃣ ¿Cuál es la *ubicación*?\n\n{opciones}")
         else:
             msg.body(MENU_PRINCIPAL)
         return str(resp) if not use_meta else ('OK', 200)
@@ -1873,6 +2088,182 @@ def webhook():
             msg.body("❌ Parte cancelado. Escribe *parte* para crear uno nuevo.")
         else:
             msg.body("Responde *SÍ* para confirmar y enviar, o *NO* para cancelar.")
+
+    # ── Flujo Mantenimiento GE ─────────────────────────────────────────────
+    elif paso == 'ge_localizacion':
+        op = incoming_msg.strip()
+        if op in [str(i) for i in range(1, len(LOCALIZACIONES_GE)+1)]:
+            loc = LOCALIZACIONES_GE[int(op)-1]
+        elif any(normalizar(op) in normalizar(l) for l in LOCALIZACIONES_GE):
+            loc = next(l for l in LOCALIZACIONES_GE if normalizar(op) in normalizar(l))
+        else:
+            opciones = "\n".join(f"{i+1}️⃣ {l}" for i, l in enumerate(LOCALIZACIONES_GE))
+            msg.body(f"⚠️ Elige una opción válida:\n\n{opciones}")
+            return str(resp) if not use_meta else ('OK', 200)
+        set_dato(numero, 'localizacion', loc)
+        set_paso(numero, 'ge_marca')
+        msg.body(f"✅ *{loc}*\n\n2️⃣ ¿Cuál es la *marca* del grupo electrógeno?\n_Ejemplo: Inmesol, Himoinsa, FG Wilson_")
+
+    elif paso == 'ge_marca':
+        set_dato(numero, 'marca', incoming_msg.strip().upper())
+        set_paso(numero, 'ge_modelo')
+        msg.body("3️⃣ ¿Cuál es el *modelo*?")
+
+    elif paso == 'ge_modelo':
+        set_dato(numero, 'modelo', incoming_msg.strip().upper())
+        set_paso(numero, 'ge_horas')
+        msg.body("4️⃣ ¿Cuántas *horas* marca el contador?\n_Ejemplo: 1250_")
+
+    elif paso == 'ge_horas':
+        set_dato(numero, 'horas', incoming_msg.strip())
+        set_dato(numero, 'ge_idx', 0)
+        set_dato(numero, 'checklist', {})
+        set_paso(numero, 'ge_checklist')
+        item = CHECKLIST_GE[0]
+        msg.body(
+            f"✅ Datos registrados. Ahora el *checklist* ({len(CHECKLIST_GE)} puntos).\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔍 *1/{len(CHECKLIST_GE)}* — {item}\n\n"
+            f"Responde: *OK*, *NO* o *NA*\n"
+            f"_(Añade obs. tras una coma: NO, fuga visible)_"
+        )
+
+    elif paso == 'ge_checklist':
+        idx_actual = datos.get('ge_idx', 0)
+        raw = incoming_msg.strip()
+        # Parsear: "OK", "NO, obs", "NA, obs"
+        partes = raw.split(',', 1)
+        estado_raw = normalizar(partes[0].strip())
+        obs_item = partes[1].strip() if len(partes) > 1 else ''
+        if estado_raw in ['ok', 'si', 'sí', 's', 'bien', 'correcto']:
+            estado_val = 'ok'
+        elif estado_raw in ['no', 'mal', 'fallo', 'falla', 'error']:
+            estado_val = 'no'
+        elif estado_raw in ['na', 'n/a', 'n.a.', 'no aplica', 'no procede', 'np']:
+            estado_val = 'na'
+        else:
+            item = CHECKLIST_GE[idx_actual]
+            msg.body(
+                f"⚠️ No entendí. Responde *OK*, *NO* o *NA*\n\n"
+                f"🔍 *{idx_actual+1}/{len(CHECKLIST_GE)}* — {item}"
+            )
+            return str(resp) if not use_meta else ('OK', 200)
+        item = CHECKLIST_GE[idx_actual]
+        checklist = datos.get('checklist', {})
+        checklist[item] = {'estado': estado_val, 'obs': obs_item}
+        set_dato(numero, 'checklist', checklist)
+        idx_siguiente = idx_actual + 1
+        if idx_siguiente < len(CHECKLIST_GE):
+            set_dato(numero, 'ge_idx', idx_siguiente)
+            item_sig = CHECKLIST_GE[idx_siguiente]
+            msg.body(
+                f"🔍 *{idx_siguiente+1}/{len(CHECKLIST_GE)}* — {item_sig}\n\n"
+                f"Responde: *OK*, *NO* o *NA*\n"
+                f"_(Añade obs. tras una coma: NO, fuga visible)_"
+            )
+        else:
+            set_dato(numero, 'ge_med_idx', 0)
+            set_dato(numero, 'mediciones', {})
+            set_paso(numero, 'ge_mediciones')
+            med = MEDICIONES_GE[0]
+            msg.body(
+                f"✅ Checklist completado.\n\n"
+                f"Ahora las *mediciones* ({len(MEDICIONES_GE)} valores).\n\n"
+                f"📊 *1/{len(MEDICIONES_GE)}* — {med}:\n"
+                f"_(Escribe el valor numérico, o *-* si no aplica)_"
+            )
+
+    elif paso == 'ge_mediciones':
+        med_idx = datos.get('ge_med_idx', 0)
+        mediciones = datos.get('mediciones', {})
+        med_key = MEDICIONES_GE[med_idx]
+        mediciones[med_key] = incoming_msg.strip()
+        set_dato(numero, 'mediciones', mediciones)
+        med_siguiente = med_idx + 1
+        if med_siguiente < len(MEDICIONES_GE):
+            set_dato(numero, 'ge_med_idx', med_siguiente)
+            med_sig = MEDICIONES_GE[med_siguiente]
+            msg.body(
+                f"📊 *{med_siguiente+1}/{len(MEDICIONES_GE)}* — {med_sig}:\n"
+                f"_(Escribe el valor o *-* si no aplica)_"
+            )
+        else:
+            set_paso(numero, 'ge_observaciones')
+            msg.body(
+                "✅ Mediciones completadas.\n\n"
+                "📝 *Observaciones generales*\n\n"
+                "Escribe cualquier incidencia, recomendación o nota.\n"
+                "Si no hay, escribe *ninguno*."
+            )
+
+    elif paso == 'ge_observaciones':
+        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else ''
+        set_dato(numero, 'observaciones_generales', val)
+        set_paso(numero, 'ge_confirmar')
+        datos = get_estado(numero)['datos']
+        checklist = datos.get('checklist', {})
+        nok = sum(1 for v in checklist.values() if v.get('estado') == 'ok')
+        nno = sum(1 for v in checklist.values() if v.get('estado') == 'no')
+        nna = sum(1 for v in checklist.values() if v.get('estado') == 'na')
+        resumen = (
+            f"📋 *RESUMEN MANTENIMIENTO GE*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 {datos.get('fecha','')}\n"
+            f"📍 {datos.get('localizacion','')}\n"
+            f"⚙️ {datos.get('marca','')} {datos.get('modelo','')} — {datos.get('horas','')} h\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ OK: {nok}  ❌ NO: {nno}  ➖ N/A: {nna}\n"
+        )
+        if nno > 0:
+            resumen += "\n⚠️ *Puntos con incidencia:*\n"
+            for item, v in checklist.items():
+                if v.get('estado') == 'no':
+                    obs_txt = f" — {v['obs']}" if v.get('obs') else ''
+                    resumen += f"  • {item}{obs_txt}\n"
+        resumen += f"━━━━━━━━━━━━━━━━━━━━\n¿Es correcto? Responde *SÍ* o *NO*"
+        msg.body(resumen)
+
+    elif paso == 'ge_confirmar':
+        if es_confirmacion(incoming_msg):
+            datos = get_estado(numero)['datos']
+            mid = guardar_mantenimiento_ge(datos, numero)
+            borrar_estado(numero)
+            BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
+            pdf_url = f"https://{BOT_URL}/mantto_ge/{mid}/pdf" if mid else None
+            checklist = datos.get('checklist', {})
+            nno = sum(1 for v in checklist.values() if v.get('estado') == 'no')
+            caption = (
+                f"🔧 *Mantto GE — {datos.get('localizacion','')}*\n"
+                f"📅 {datos.get('fecha','')} | ⚙️ {datos.get('marca','')} {datos.get('modelo','')}\n"
+                f"⏱️ {datos.get('horas','')} h | {'⚠️ ' + str(nno) + ' incidencias' if nno > 0 else '✅ Sin incidencias'}"
+            )
+            if pdf_url:
+                enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+            else:
+                enviar_whatsapp(SUPERVISOR_WA, caption)
+            # Email con PDF
+            if mid:
+                try:
+                    pdf_bytes = generar_pdf_mantenimiento_ge({**datos, 'operario': nombre_operario(numero)})
+                    loc_clean = datos.get('localizacion','GE').replace(' ','_')
+                    fecha_clean = datos.get('fecha','').replace('/','')
+                    fname = f"ManttoGE_{loc_clean}_{fecha_clean}.pdf"
+                    enviar_email_con_pdf(
+                        destinatario=GMAIL_USER,
+                        asunto=f"Mantenimiento GE — {datos.get('localizacion','')} — {datos.get('fecha','')}",
+                        cuerpo=f"Adjunto el informe de mantenimiento preventivo del grupo electrógeno.\n\nUbicación: {datos.get('localizacion','')}\nFecha: {datos.get('fecha','')}\nMarca/Modelo: {datos.get('marca','')} {datos.get('modelo','')}\nHoras: {datos.get('horas','')}",
+                        pdf_bytes=pdf_bytes,
+                        nombre_pdf=fname
+                    )
+                except Exception as e:
+                    print(f"Error email mantto GE: {e}")
+            msg.body("✅ *Mantenimiento registrado.*\n\nEl informe se ha enviado al supervisor. ¡Gracias!")
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body("❌ Mantenimiento cancelado.")
+        else:
+            msg.body("Responde *SÍ* para confirmar o *NO* para cancelar.")
+
 
     # ── Flujo vehículos ────────────────────────────────────────────────────
     elif paso == 'v_matricula':
@@ -4988,6 +5379,31 @@ def pdf_albaran(aid):
     from flask import Response
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre_f}"'})
+
+
+@app.route('/mantto_ge/<int:mid>/pdf')
+def pdf_mantto_ge(mid):
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("SELECT fecha,localizacion,marca,modelo,horas,checklist,mediciones,observaciones_generales,operario FROM mantenimiento_ge WHERE id=%s", (mid,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return "No encontrado", 404
+        datos = {
+            'fecha': row[0], 'localizacion': row[1], 'marca': row[2],
+            'modelo': row[3], 'horas': row[4],
+            'checklist': row[5] if row[5] else {},
+            'mediciones': row[6] if row[6] else {},
+            'observaciones_generales': row[7] or '',
+            'operario': row[8] or '',
+        }
+        pdf_bytes = generar_pdf_mantenimiento_ge(datos)
+        from flask import Response
+        return Response(pdf_bytes, mimetype='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="mantto_ge_{mid}.pdf"'})
+    except Exception as e:
+        return f"Error: {e}", 500
 
 
 if __name__ == '__main__':
