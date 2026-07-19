@@ -698,7 +698,8 @@ def finalizar_parte(numero, datos):
     borrar_estado(numero)
 
 
-MENSAJES_VEHICULO   = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+MENSAJES_VEHICULO         = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
+MENSAJES_MANTENIMIENTO_GE = ['mantenimiento ge', 'mantto ge', 'ge tbsa', 'grupo electrogeno', 'grupo electrógeno', 'tbsa ge']
 MENSAJES_MANTTO     = ['mantenimiento', 'mantto', 'grupo electrogeno', 'grupo electrógeno', 'generador', 'ge tbsa', 'tbsa']
 LOCALIZACIONES_GE   = ['Spar Mederos', 'Spar El Paso', 'Spar Triana', 'Central de Servicios', 'Grupo Móvil']
 CHECKLIST_GE = [
@@ -1343,6 +1344,21 @@ def webhook():
         set_paso(numero, 'ge_localizacion')
         opciones = '\n'.join(f'{i+1}\ufe0f\u20e3 {l}' for i, l in enumerate(LOCALIZACIONES_GE))
         msg.body(f"🔧 *Mantenimiento GE — TBSA*\n\nFecha: {datetime.now().strftime('%d/%m/%Y')}\n\n¿Cuál es la *ubicación*?\n\n{opciones}")
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Detectar arranque mantenimiento GE
+    if any(p in normalizar(incoming_msg) for p in MENSAJES_MANTENIMIENTO_GE):
+        iniciar_mantenimiento_ge(numero)
+        msg.body(
+            "\U0001f527 *Mantenimiento GE \u2014 TBSA*\n\n"
+            f"Fecha: {datetime.now().strftime('%d/%m/%Y')}\n\n"
+            "1\ufe0f\u20e3 \u00bfCu\u00e1l es la *ubicaci\u00f3n*?\n\n"
+            "1\ufe0f\u20e3 Spar Mederos\n"
+            "2\ufe0f\u20e3 Spar El Paso\n"
+            "3\ufe0f\u20e3 Spar Triana\n"
+            "4\ufe0f\u20e3 Central de Servicios\n"
+            "5\ufe0f\u20e3 Grupo M\u00f3vil"
+        )
         return str(resp) if not use_meta else ('OK', 200)
 
     # Detectar arranque vehiculo
@@ -5402,6 +5418,41 @@ def pdf_mantto_ge(mid):
         from flask import Response
         return Response(pdf_bytes, mimetype='application/pdf',
             headers={'Content-Disposition': f'inline; filename="mantto_ge_{mid}.pdf"'})
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
+
+@app.route('/mantto_ge/<int:ge_id>/pdf')
+def web_mantenimiento_ge_pdf(ge_id):
+    """Sirve el PDF de un mantenimiento GE por ID."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT fecha, localizacion, marca, modelo, horas,
+                   checklist, mediciones, observaciones_generales, operario
+            FROM mantenimiento_ge WHERE id = %s
+        """, (ge_id,))
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return "No encontrado", 404
+        datos = {
+            'fecha': row[0], 'localizacion': row[1], 'marca': row[2],
+            'modelo': row[3], 'horas': row[4],
+            'checklist': row[5] if isinstance(row[5], dict) else {},
+            'mediciones': row[6] if isinstance(row[6], dict) else {},
+            'observaciones_generales': row[7] or '',
+            'operario': row[8] or '',
+        }
+        pdf_bytes = generar_pdf_mantenimiento_ge(datos)
+        from flask import Response
+        loc = datos['localizacion'].replace(' ', '_')
+        fecha = datos['fecha'].replace('/', '')
+        filename = f"mantto_ge_{loc}_{fecha}.pdf"
+        return Response(pdf_bytes, mimetype='application/pdf',
+            headers={'Content-Disposition': f'inline; filename="{filename}"'})
     except Exception as e:
         return f"Error: {e}", 500
 
