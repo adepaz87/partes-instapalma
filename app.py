@@ -1490,14 +1490,104 @@ def webhook():
                 msg.body(f"❌ Error generando PDF: {e}")
             return str(resp) if not use_meta else ('OK', 200)
         elif op == '6':
-            borrar_estado(numero)
-            msg.body("📋 *Revisiones de herramienta*\n\nAccede desde el dashboard:\nhttps://bot-production-66b8.up.railway.app/herramienta/revisiones")
+            import datetime as _dt
+            _fecha = _dt.date.today().strftime('%d/%m/%Y')
+            _nom = nombre_op
+            set_paso(numero, 'herr_revision_espera')
+            msg.body(
+                f'*Revision mensual de herramienta - Instapalma*\n\n'
+                f'Fecha: {_fecha}\n'
+                f'Operario: {_nom}\n\n'
+                'Por favor, confirma el estado de tu herramienta y EPIs asignados este mes:\n\n'
+                '\u2705 Todo OK\n'
+                '\u26a0\ufe0f Algun articulo deficiente o faltante\n\n'
+                'Responde indicando que articulos estan bien y cuales tienen algun problema. Gracias.'
+            )
             return str(resp) if not use_meta else ('OK', 200)
         else:
             msg.body(MENU_HERRAMIENTA)
             return str(resp) if not use_meta else ('OK', 200)
 
+    elif paso_herr == 'herr_revision_espera':
+        import datetime as _dt
+        _fecha_hoy = str(_dt.date.today())
+        _nom_rev = nombre_op
+        _msg_low = msg_n_herr.strip().lower()
+        # Detectar respuesta OK
+        if any(k in _msg_low for k in ['todo ok', 'ok', '\u2705', 'todo bien', 'correcto', 'bien']):
+            # Guardar en BD como resultado OK
+            try:
+                _conn = get_db(); _cur = _conn.cursor()
+                _cur.execute(
+                    'INSERT INTO herramienta_revisiones (fecha, trabajador, resultado, observaciones) VALUES (%s,%s,%s,%s)',
+                    (_fecha_hoy, _nom_rev, 'ok', 'Todo correcto')
+                )
+                _conn.commit(); _cur.close(); _conn.close()
+            except Exception as _e:
+                print(f'Error guardando revision: {_e}')
+            borrar_estado(numero)
+            msg.body('\u2705 Revision registrada correctamente. Gracias ' + _nom_rev + '!')
+            return str(resp) if not use_meta else ('OK', 200)
+        # Detectar incidencia
+        elif any(k in _msg_low for k in ['\u26a0', 'incidencia', 'falta', 'deficiente', 'roto', 'mal', 'problema', 'faltante']):
+            set_paso(numero, 'herr_revision_detalle')
+            msg.body('\u26a0\ufe0f Entendido. Describe brevemente que articulos tienen problema o faltan:')
+            return str(resp) if not use_meta else ('OK', 200)
+        # El operario escribe directamente el detalle (sin poner OK ni ⚠️)
+        else:
+            # Guardar como incidencia con lo que haya escrito
+            try:
+                _conn = get_db(); _cur = _conn.cursor()
+                _cur.execute(
+                    'INSERT INTO herramienta_revisiones (fecha, trabajador, resultado, observaciones) VALUES (%s,%s,%s,%s)',
+                    (_fecha_hoy, _nom_rev, 'incidencia', msg_n_herr.strip())
+                )
+                _conn.commit(); _cur.close(); _conn.close()
+            except Exception as _e:
+                print(f'Error guardando revision: {_e}')
+            borrar_estado(numero)
+            msg.body('\u26a0\ufe0f Revision con incidencia registrada. Gracias ' + _nom_rev + '. Alberto sera notificado.')
+            # Notificar al supervisor
+            try:
+                _notify_client = Client(TWILIO_SID, TWILIO_TOKEN)
+                _notify_client.messages.create(
+                    from_=TWILIO_FROM,
+                    to='whatsapp:+34690875940',
+                    body=f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{msg_n_herr.strip()}'
+                )
+            except Exception as _e:
+                print(f'Error notificando supervisor: {_e}')
+            return str(resp) if not use_meta else ('OK', 200)
+
+    elif paso_herr == 'herr_revision_detalle':
+        import datetime as _dt
+        _fecha_hoy = str(_dt.date.today())
+        _nom_rev = nombre_op
+        _detalle = msg_n_herr.strip()
+        try:
+            _conn = get_db(); _cur = _conn.cursor()
+            _cur.execute(
+                'INSERT INTO herramienta_revisiones (fecha, trabajador, resultado, observaciones) VALUES (%s,%s,%s,%s)',
+                (_fecha_hoy, _nom_rev, 'incidencia', _detalle)
+            )
+            _conn.commit(); _cur.close(); _conn.close()
+        except Exception as _e:
+            print(f'Error guardando revision detalle: {_e}')
+        borrar_estado(numero)
+        msg.body('\u26a0\ufe0f Revision con incidencia registrada. Gracias ' + _nom_rev + '. Alberto sera notificado.')
+        try:
+            _notify_client = Client(TWILIO_SID, TWILIO_TOKEN)
+            _notify_client.messages.create(
+                from_=TWILIO_FROM,
+                to='whatsapp:+34690875940',
+                body=f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{_detalle}'
+            )
+        except Exception as _e:
+            print(f'Error notificando supervisor: {_e}')
+        return str(resp) if not use_meta else ('OK', 200)
+
     elif paso_herr == 'herr_alta_nombre':
+
         set_dato(numero, 'herr_nombre', incoming_msg.strip())
         set_paso(numero, 'herr_alta_obra')
         msg.body(f"📍 ¿En qué obra o lugar se va a usar?\n_(Escribe el nombre de la obra)_")
