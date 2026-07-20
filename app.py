@@ -329,13 +329,23 @@ def generar_pdf_diario(fecha_str=None):
         fecha_str = str(_date.today())
 
     conn = get_db(); cur = conn.cursor()
+    # Normalizar fecha: aceptar YYYY-MM-DD y DD/MM/YYYY
+    from datetime import datetime as _dtp
+    if '-' in fecha_str:
+        fecha_dmy = _dtp.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y')
+        fecha_ymd = fecha_str
+    else:
+        fecha_dmy = fecha_str
+        fecha_ymd = _dtp.strptime(fecha_str, '%d/%m/%Y').strftime('%Y-%m-%d')
     cur.execute(
         "SELECT cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante "
-        "FROM partes WHERE fecha=%s ORDER BY id ASC",
-        (fecha_str,)
+        "FROM partes WHERE fecha IN (%s, %s) ORDER BY id ASC",
+        (fecha_dmy, fecha_ymd)
     )
     partes = cur.fetchall()
     cur.close(); conn.close()
+    # Actualizar fecha_str al formato display
+    fecha_str = fecha_dmy
 
     AZUL       = colors.HexColor('#1a3a5c')
     AZUL_CLARO = colors.HexColor('#2e5c8a')
