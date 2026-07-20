@@ -5562,7 +5562,7 @@ def web_herramienta():
     )
     filas_obra = "".join(
         f"<tr><td>{o[1]}</td><td>{o[2] or ''}</td><td>{o[3]}</td><td>{str(o[4])[:10]}</td>"
-        f"<td><a href='/herramienta/baja_obra/{o[0]}' onclick='return confirm(\"¿Confirmar baja?\")'>🔙 Baja</a></td></tr>"
+        f"<td style='white-space:nowrap'><a href='/herramienta/editar_obra/{o[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/baja_obra/{o[0]}' onclick='return confirm(\"¿Confirmar baja?\")'>🔙 Baja</a></td></tr>"
         for o in en_obra
     )
     filas_pers = "".join(
@@ -5712,6 +5712,43 @@ def web_alta_obra():
     <label>Responsable</label><input name='responsable' placeholder='Nombre del operario (opcional)'>
     <button class='btn' type='submit'>Asignar a obra</button>
     </form></div></body></html>"""
+
+@app.route('/herramienta/editar_obra/<int:oid>', methods=['GET','POST'])
+def web_editar_obra(oid):
+    from flask import request as req, redirect
+    conn = get_db(); cur = conn.cursor()
+    if req.method == 'POST':
+        obra        = req.form.get('obra','').strip()
+        nombre_op   = req.form.get('nombre_operario','').strip()
+        fecha_alta  = req.form.get('fecha_alta','').strip() or None
+        cur.execute(
+            'UPDATE herramienta_obra SET obra=%s, nombre_operario=%s, fecha_alta=COALESCE(%s::date, fecha_alta) WHERE id=%s',
+            (obra, nombre_op, fecha_alta, oid)
+        )
+        conn.commit(); cur.close(); conn.close()
+        return redirect('/herramienta#obra')
+    cur.execute(
+        'SELECT ho.id, h.nombre, ho.nombre_operario, ho.obra, ho.fecha_alta FROM herramienta_obra ho JOIN herramienta h ON h.id=ho.herramienta_id WHERE ho.id=%s',
+        (oid,)
+    )
+    r = cur.fetchone(); cur.close(); conn.close()
+    if not r: return 'No encontrado', 404
+    oid_, nombre, nombre_op, obra, fecha_alta = r
+    fecha_str = str(fecha_alta)[:10] if fecha_alta else ''
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Editar herramienta en obra</title>
+    <style>{CSS_BASE} form{{max-width:420px;margin:32px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.1)}}
+    label{{display:block;font-weight:600;margin-top:14px;font-size:13px}} input{{width:100%;padding:9px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;margin-top:4px}}
+    .btn{{background:#1a3a5c;color:white;padding:11px 28px;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-top:20px;font-size:15px;width:100%}}</style></head><body>
+    <header><div><h1>✏️ Editar en obra</h1><p>Instapalma</p></div></header>
+    <div class='container'><form method='POST'>
+    <p style='font-weight:700;font-size:16px'>{nombre}</p>
+    <label>Obra / Ubicación<input name='obra' value='{obra}' required></label>
+    <label>Responsable<input name='nombre_operario' value='{nombre_op or ''}'></label>
+    <label>Fecha alta<input type='date' name='fecha_alta' value='{fecha_str}'></label>
+    <button class='btn' type='submit'>💾 Guardar cambios</button>
+    </form><p style='text-align:center;margin-top:16px'><a href='/herramienta'>← Volver</a></p></div>
+    </body></html>""" 
+
 
 @app.route('/herramienta/baja_obra/<int:oid>')
 def web_baja_obra(oid):
