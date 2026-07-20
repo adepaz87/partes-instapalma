@@ -1433,7 +1433,8 @@ def webhook():
         "2️⃣ Baja / devolución a almacén\n"
         "3️⃣ Listado almacén (PDF)\n"
         "4️⃣ Listado en obra (PDF)\n"
-        "5️⃣ Listado personal (PDF)"
+        "5️⃣ Listado personal (PDF)\n"
+        "6️⃣ Revisión de herramienta"
     )
 
     # ── Arranque: palabra "herramienta" ───────────────────────────────────────
@@ -1487,6 +1488,10 @@ def webhook():
                 msg.body(f"📋 *Herramienta Personal:*\n{url}")
             except Exception as e:
                 msg.body(f"❌ Error generando PDF: {e}")
+            return str(resp) if not use_meta else ('OK', 200)
+        elif op == '6':
+            borrar_estado(numero)
+            msg.body("📋 *Revisiones de herramienta*\n\nAccede desde el dashboard:\nhttps://bot-production-66b8.up.railway.app/herramienta/revisiones")
             return str(resp) if not use_meta else ('OK', 200)
         else:
             msg.body(MENU_HERRAMIENTA)
