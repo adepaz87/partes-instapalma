@@ -5532,17 +5532,17 @@ def web_herramienta():
     cur.execute("SELECT id, nombre, tipo, stock_almacen, observaciones FROM herramienta ORDER BY tipo, nombre")
     items = cur.fetchall()
     cur.execute("""
-        SELECT ho.id, h.nombre, ho.operario_nombre, ho.obra, ho.fecha_alta
+        SELECT ho.id, h.nombre, ho.nombre_operario, ho.obra, ho.fecha_alta
         FROM herramienta_obra ho
         JOIN herramienta h ON h.id = ho.herramienta_id
+        WHERE ho.activo = true
         ORDER BY ho.fecha_alta DESC
     """)
     en_obra = cur.fetchall()
     cur.execute("""
-        SELECT hp.id, h.nombre, hp.operario_nombre, hp.descripcion
+        SELECT hp.id, hp.articulo, hp.propietario, hp.tipo
         FROM herramienta_personal hp
-        JOIN herramienta h ON h.id = hp.herramienta_id
-        ORDER BY hp.operario_nombre, h.nombre
+        ORDER BY hp.propietario, hp.articulo
     """)
     personal = cur.fetchall()
     cur.close(); conn.close()
