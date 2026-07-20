@@ -733,16 +733,15 @@ LOCALIZACIONES_GE   = ['Spar Mederos', 'Spar El Paso', 'Spar Triana', 'Central d
 CHECKLIST_GE = [
     'Nivel aceite', 'Nivel refrigerante', 'Nivel combustible',
     'Estado batería', 'Tensión batería', 'Cargador batería',
-    'Bornes', 'Correas', 'Manguitos', 'Fugas',
-    'Filtro aire', 'Escape', 'Ventilación', 'Alternador',
-    'Cuadro control', 'Alarmas', 'Arranque auto', 'Parada auto',
-    'ATS', 'Prueba carga',
+    'Bornes', 'Fugas',
+    'Alarmas', 'Arranque auto', 'Parada auto',
+    'Conmutación por fallo red', 'Prueba carga',
 ]
 MEDICIONES_GE = [
     'L1-L2 (V)', 'L2-L3 (V)', 'L3-L1 (V)',
     'L1-N (V)', 'L2-N (V)', 'L3-N (V)',
     'Frecuencia (Hz)', 'I L1 (A)', 'I L2 (A)', 'I L3 (A)',
-    'Presión aceite', 'Temp. motor',
+    'Temp. motor',
 ]
 MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
 MENSAJES_RESUMEN_MES = ['resumen mes', 'resumen del mes', 'resumen mensual', 'cierre mes', 'cierre del mes', 'resumen fin de mes', 'fin de mes']
