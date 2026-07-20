@@ -5622,6 +5622,7 @@ def web_herramienta():
     </div>
 
     <div id='obra' class='section'>
+      <a href='/herramienta/devolucion' class='btn-add' style='background:#c0392b;margin-bottom:12px'>&#128257; Devolución a almacén</a>
       <table><tr><th>Herramienta</th><th>Operario</th><th>Obra</th><th>Fecha alta</th><th></th></tr>
       {filas_obra if filas_obra else "<tr><td colspan='5' style='text-align:center;color:#999'>Nada en obra ahora mismo</td></tr>"}
       </table>
@@ -5769,6 +5770,83 @@ def web_editar_obra(oid):
     </form><p style='text-align:center;margin-top:16px'><a href='/herramienta'>← Volver</a></p></div>
     </body></html>""" 
 
+
+
+@app.route('/herramienta/devolucion', methods=['GET', 'POST'])
+def web_devolucion():
+    from flask import request as req2, redirect
+    if req2.method == 'POST':
+        oids = req2.form.getlist('oids')
+        if oids:
+            conn = get_db(); cur = conn.cursor()
+            for oid in oids:
+                try:
+                    oid_int = int(oid)
+                    cur.execute("SELECT herramienta_id FROM herramienta_obra WHERE id=%s", (oid_int,))
+                    row = cur.fetchone()
+                    if row:
+                        cur.execute("UPDATE herramienta SET stock_almacen = stock_almacen + 1, updated_at=NOW() WHERE id=%s", (row[0],))
+                        cur.execute("DELETE FROM herramienta_obra WHERE id=%s", (oid_int,))
+                except Exception as e:
+                    print(f"Error devolucion {oid}: {e}")
+            conn.commit(); cur.close(); conn.close()
+        return redirect('/herramienta')
+    # GET: mostrar lista de herramienta en obra
+    conn = get_db(); cur = conn.cursor()
+    sql = ('SELECT ho.id, h.nombre, ho.operario_nombre, ho.obra, ho.fecha_alta::text'
+           ' FROM herramienta_obra ho'
+           ' JOIN herramienta h ON h.id = ho.herramienta_id'
+           ' ORDER BY h.nombre, ho.operario_nombre')
+    cur.execute(sql)
+    en_obra = cur.fetchall()
+    cur.close(); conn.close()
+    def _fila(o):
+        fecha = str(o[4])[:10] if o[4] else '-'
+        operario = o[2] or '-'
+        obra = o[3] or '-'
+        return ('<tr>'
+            '<td style="width:36px;text-align:center"><input type="checkbox" name="oids" value="%s" style="width:18px;height:18px;cursor:pointer"></td>'
+            '<td><b>%s</b></td>'
+            '<td>%s</td>'
+            '<td>%s</td>'
+            '<td>%s</td>'
+            '</tr>') % (o[0], o[1], operario, obra, fecha)
+    filas = ''.join(_fila(o) for o in en_obra)
+    empty = '<tr><td colspan="5" style="text-align:center;color:#999;padding:20px">No hay herramienta en obra ahora mismo</td></tr>'
+    css = CSS_BASE
+    return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Devolucion a almacen - Instapalma</title>'
+        '<style>' + css +
+        'table{width:100%;border-collapse:collapse;font-size:14px}'
+        'th{background:#1a3a5c;color:white;padding:10px 8px;text-align:left}'
+        'td{padding:9px 8px;border-bottom:1px solid #eee}'
+        'tr:hover td{background:#f5f7ff}'
+        'input[type=checkbox]{accent-color:#1a3a5c}'
+        '.btn{background:#c0392b;color:white;padding:11px 28px;border-radius:8px;border:none;font-weight:700;cursor:pointer;font-size:15px}'
+        '.btn-back{background:#eee;color:#333;padding:10px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:12px}'
+        '.sel-all{font-size:12px;color:#1a3a5c;cursor:pointer;text-decoration:underline;margin-left:12px}'
+        '</style>'
+        '<script>'
+        'function toggleAll(cb){document.querySelectorAll("input[name=oids]").forEach(c=>c.checked=cb.checked)}'
+        '</script>'
+        '</head><body>'
+        '<header><div><h1>Devolucion a Almacen</h1><p>Instapalma</p></div></header>'
+        '<div class="container">'
+        '<a href="/herramienta" class="btn-back">&#8592; Herramienta</a>'
+        '<p style="color:#555;font-size:13px;margin:0 0 14px">Marca las herramientas que se devuelven al almacen y pulsa Confirmar.</p>'
+        '<form method="POST">'
+        '<table>'
+        '<tr>'
+        '<th style="width:36px"><input type="checkbox" onchange="toggleAll(this)" style="width:18px;height:18px;cursor:pointer" title="Seleccionar todo"></th>'
+        '<th>Herramienta</th><th>Operario</th><th>Obra</th><th>Fecha alta</th>'
+        '</tr>'
+        + (filas if filas else empty) +
+        '</table>'
+        '<div style="margin-top:20px">'
+        '<a href="/herramienta" class="btn-back">Cancelar</a>'
+        '<button type="submit" class="btn" onclick="return confirm(\'Devolver las herramientas seleccionadas al almacen?\')">&#128257; Confirmar devolucion</button>'
+        '</div>'
+        '</form>'
+        '</div></body></html>')
 
 @app.route('/herramienta/baja_obra/<int:oid>')
 def web_baja_obra(oid):
