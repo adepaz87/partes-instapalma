@@ -4790,15 +4790,15 @@ def generar_pdf_herramienta(seccion='todo'):
         # ── PERSONAL ──────────────────────────────────────────────────────────
         if seccion in ('personal', 'todo'):
             cur.execute("""
-                SELECT nombre, propietario, observaciones
-                FROM herramienta WHERE tipo='personal'
-                ORDER BY propietario, nombre
+                SELECT articulo, propietario, tipo
+                FROM herramienta_personal
+                ORDER BY propietario, articulo
             """)
             rows = cur.fetchall()
             elements.append(Paragraph("👷 HERRAMIENTA PERSONAL", sec_style))
             elements.append(Spacer(1, 0.1*cm))
             if rows:
-                filas = [['Herramienta', 'Asignada a', 'Observaciones']]
+                filas = [['Herramienta / EPI', 'Operario', 'Tipo']]
                 for r in rows:
                     filas.append([r[0], r[1] or '', r[2] or ''])
                 t = Table(filas, colWidths=[7*cm, 5*cm, 5*cm])
