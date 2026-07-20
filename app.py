@@ -5599,6 +5599,7 @@ def web_herramienta():
 
     <div id='almacen' class='section active'>
       <a href='/herramienta/nuevo' class='btn-add'>+ Nueva herramienta</a>
+      <a href='/herramienta/alta_obra' class='btn-add' style='margin-left:8px;background:#2e7d32'>📤 Alta en obra</a>
       <table><tr><th>Nombre</th><th>Tipo</th><th>Stock</th><th>Observaciones</th><th></th></tr>
       {filas_almacen if filas_almacen else "<tr><td colspan='5' style='text-align:center;color:#999'>Sin herramienta registrada</td></tr>"}
       </table>
