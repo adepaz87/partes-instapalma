@@ -5567,7 +5567,7 @@ def web_herramienta():
 
     filas_almacen = "".join(
         f"<tr><td>{i[1]}</td><td><span class='tag tag-{i[2].lower()}'>{i[2]}</span></td><td style='text-align:center'><b>{i[3]}</b></td><td>{i[4] or ''}</td>"
-        f"<td><a href='/herramienta/editar/{i[0]}'>✏️</a></td></tr>"
+        f"<td style='white-space:nowrap'><a href='/herramienta/editar/{i[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/borrar/{i[0]}' onclick=\"return confirm('¿Eliminar herramienta? Si tiene unidades en obra no se podrá.')\">🗑️</a></td></tr>"
         for i in items
     )
     filas_obra = "".join(
@@ -5637,6 +5637,10 @@ def web_herramienta():
 
 
 @app.route('/herramienta/nuevo', methods=['GET','POST'])
+@app.route('/herramienta/nuevo', methods=['GET','POST'])
+def web_herramienta_nuevo():
+    return web_herramienta_form(mid=None)
+
 @app.route('/herramienta/editar/<int:mid>', methods=['GET','POST'])
 def web_herramienta_form(mid=None):
     from flask import request as req
@@ -5779,6 +5783,21 @@ def web_baja_obra(oid):
     return redirect('/herramienta')
 
 
+
+
+@app.route('/herramienta/borrar/<int:mid>')
+def web_herramienta_borrar(mid):
+    from flask import redirect
+    conn = get_db(); cur = conn.cursor()
+    # Comprobar si tiene unidades en obra antes de borrar
+    cur.execute("SELECT COUNT(*) FROM herramienta_obra WHERE herramienta_id=%s", (mid,))
+    en_obra = cur.fetchone()[0]
+    if en_obra > 0:
+        cur.close(); conn.close()
+        return '<p style="font-family:sans-serif;padding:20px">No se puede eliminar: tiene %d unidad(es) en obra. Haz la baja primero.</p><a href="/herramienta">Volver</a>' % en_obra
+    cur.execute("DELETE FROM herramienta WHERE id=%s", (mid,))
+    conn.commit(); cur.close(); conn.close()
+    return redirect('/herramienta')
 
 @app.route('/herramienta/revisiones')
 def web_revisiones():
