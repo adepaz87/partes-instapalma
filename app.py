@@ -3428,6 +3428,36 @@ def admin_carga_personal_herramienta():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/sync-obra', methods=['POST'])
+def admin_sync_obra():
+    """Sincroniza herramienta en obra. Cierra activos y abre los indicados."""
+    try:
+        items = request.get_json()
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('UPDATE herramienta_obra SET activo=false WHERE activo=true')
+        insertadas = 0
+        for item in items:
+            nombre = item['nombre']
+            obra   = item.get('obra', '')
+            resp_  = item.get('responsable') or ''
+            fecha  = item.get('fecha_alta', '2026-07-20')
+            cur.execute(
+                'INSERT INTO herramienta (nombre, tipo, stock_almacen) VALUES (%s,%s,%s) ON CONFLICT (nombre) DO NOTHING',
+                (nombre, 'almacen', 0)
+            )
+            cur.execute('SELECT id FROM herramienta WHERE nombre=%s', (nombre,))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    'INSERT INTO herramienta_obra (herramienta_id, obra, responsable, fecha_alta, activo) VALUES (%s,%s,%s,%s,true)',
+                    (row[0], obra, resp_, fecha)
+                )
+                insertadas += 1
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'insertadas': insertadas}, 200
+    except Exception as e:
+        return {'status': 'error', 'msg': str(e)}, 500
+
 @app.route('/admin/carga-herramienta', methods=['POST'])
 def admin_carga_herramienta():
     """Carga masiva de herramienta. Body: lista de {nombre, obra, responsable, fecha_alta, cantidad}"""
