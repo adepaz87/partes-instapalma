@@ -1527,6 +1527,13 @@ def webhook():
                 print(f'Error guardando revision: {_e}')
             borrar_estado(numero)
             msg.body('\u2705 Revision registrada correctamente. Gracias ' + _nom_rev + '!')
+            try:
+                enviar_whatsapp(SUPERVISOR_WA,
+                    '\u2705 *Revision herramienta - OK*\n'
+                    + '\U0001f477 Operario: ' + _nom_rev + '\n'
+                    + '\U0001f4c5 Fecha: ' + _fecha_hoy)
+            except Exception as _en:
+                print('Error notif revision OK: ' + str(_en))
             return str(resp) if not use_meta else ('OK', 200)
         # Detectar incidencia
         elif any(k in _msg_low for k in ['\u26a0', 'incidencia', 'falta', 'deficiente', 'roto', 'mal', 'problema', 'faltante']):
