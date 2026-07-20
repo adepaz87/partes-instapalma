@@ -3434,6 +3434,10 @@ def admin_sync_obra():
     try:
         items = request.get_json()
         conn = get_db(); cur = conn.cursor()
+        # Restaurar stock de los activos que se van a cerrar
+        cur.execute('SELECT herramienta_id FROM herramienta_obra WHERE activo=true')
+        for (hid,) in cur.fetchall():
+            cur.execute('UPDATE herramienta SET stock_almacen = stock_almacen + 1, updated_at=NOW() WHERE id=%s', (hid,))
         cur.execute('UPDATE herramienta_obra SET activo=false WHERE activo=true')
         insertadas = 0
         for item in items:
@@ -3445,12 +3449,16 @@ def admin_sync_obra():
                 'INSERT INTO herramienta (nombre, tipo, stock_almacen) VALUES (%s,%s,%s) ON CONFLICT (nombre) DO NOTHING',
                 (nombre, 'almacen', 0)
             )
-            cur.execute('SELECT id FROM herramienta WHERE nombre=%s', (nombre,))
+            cur.execute('SELECT id, stock_almacen FROM herramienta WHERE nombre=%s', (nombre,))
             row = cur.fetchone()
             if row:
+                hid, hstock = row
+                if hstock < 1:
+                    continue  # sin stock, no asignar
+                cur.execute('UPDATE herramienta SET stock_almacen = stock_almacen - 1, updated_at=NOW() WHERE id=%s', (hid,))
                 cur.execute(
                     'INSERT INTO herramienta_obra (herramienta_id, herramienta_nombre, nombre_operario, obra, fecha_alta, activo) VALUES (%s,%s,%s,%s,%s,true)',
-                    (row[0], nombre, resp_, obra, fecha)
+                    (hid, nombre, resp_, obra, fecha)
                 )
                 insertadas += 1
         conn.commit(); cur.close(); conn.close()
@@ -5663,6 +5671,46 @@ def web_herramienta_form(mid=None):
     </form></div>
     <div style='padding:0 30px'><a href='/herramienta' class='back'>← Volver</a></div></body></html>"""
 
+
+@app.route('/herramienta/alta_obra', methods=['GET','POST'])
+def web_alta_obra():
+    from flask import request as req, redirect
+    if req.method == 'POST':
+        hid   = int(req.form.get('herramienta_id', 0))
+        obra  = req.form.get('obra', '').strip()
+        resp_ = req.form.get('responsable', '').strip()
+        if not hid or not obra:
+            return redirect('/herramienta')
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT nombre, stock_almacen FROM herramienta WHERE id=%s', (hid,))
+        row = cur.fetchone()
+        if row and row[1] > 0:
+            cur.execute('UPDATE herramienta SET stock_almacen = stock_almacen - 1, updated_at=NOW() WHERE id=%s', (hid,))
+            cur.execute('INSERT INTO herramienta_obra (herramienta_id, herramienta_nombre, nombre_operario, obra, activo) VALUES (%s,%s,%s,%s,true)', (hid, row[0], resp_, obra))
+            conn.commit()
+        cur.close(); conn.close()
+        return redirect('/herramienta')
+    # GET — formulario
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id, nombre, stock_almacen FROM herramienta WHERE tipo='almacen' AND stock_almacen > 0 ORDER BY nombre")
+    disponibles = cur.fetchall()
+    cur.close(); conn.close()
+    opciones = ''.join(f"<option value='{h[0]}'>{h[1]} (stock: {h[2]})</option>" for h in disponibles)
+    return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Alta en Obra</title>
+    <style>{CSS_BASE} form{{max-width:480px;margin:32px auto;background:white;padding:24px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.1)}}
+    label{{display:block;font-weight:600;margin-top:14px;margin-bottom:4px}}
+    select,input{{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box}}
+    .btn{{background:#1a3a5c;color:white;padding:11px 24px;border:none;border-radius:8px;font-weight:700;cursor:pointer;width:100%;margin-top:18px;font-size:15px}}
+    .back{{display:inline-block;margin-bottom:16px;color:#1a3a5c;text-decoration:none;font-weight:600}}
+    </style></head><body><div class='container'>
+    <a href='/herramienta' class='back'>← Volver</a>
+    <form method='POST'>
+    <h2>📤 Alta en Obra</h2>
+    <label>Herramienta</label><select name='herramienta_id'>{opciones}</select>
+    <label>Obra</label><input name='obra' placeholder='Nombre de la obra' required>
+    <label>Responsable</label><input name='responsable' placeholder='Nombre del operario (opcional)'>
+    <button class='btn' type='submit'>Asignar a obra</button>
+    </form></div></body></html>"""
 
 @app.route('/herramienta/baja_obra/<int:oid>')
 def web_baja_obra(oid):
