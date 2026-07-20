@@ -4493,6 +4493,16 @@ def init_herramienta_db():
                 fecha_alta TIMESTAMP DEFAULT NOW()
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS herramienta_revisiones (
+                id SERIAL PRIMARY KEY,
+                fecha DATE NOT NULL,
+                trabajador VARCHAR(150) NOT NULL,
+                resultado VARCHAR(20) DEFAULT 'ok',
+                observaciones TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         conn.commit(); cur.close(); conn.close()
         print("Herramienta DB OK")
     except Exception as e:
@@ -5595,6 +5605,7 @@ def web_herramienta():
       <button class='tab active' onclick='showTab("almacen")'>📦 Almacén ({len(items)})</button>
       <button class='tab' onclick='showTab("obra")'>🏗️ En Obra ({len(en_obra)})</button>
       <button class='tab' onclick='showTab("pers")'>👷 Personal ({len(personal)})</button>
+      <a href='/herramienta/revisiones' class='tab' style='text-decoration:none'>📋 Revisiones</a>
     </div>
 
     <div id='almacen' class='section active'>
@@ -5767,6 +5778,76 @@ def web_baja_obra(oid):
     from flask import redirect
     return redirect('/herramienta')
 
+
+
+@app.route('/herramienta/revisiones')
+def web_revisiones():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute('SELECT id, fecha, trabajador, resultado, observaciones FROM herramienta_revisiones ORDER BY fecha DESC, trabajador')
+    revs = cur.fetchall()
+    cur.close(); conn.close()
+    def _row(r):
+        tc = 'ok' if r[3]=='ok' else 'inc'
+        tt = 'OK' if r[3]=='ok' else 'Incidencia'
+        o  = r[4] or '-'
+        return '<tr><td>%s</td><td>%s</td><td><span class="tag tag-%s">%s</span></td><td>%s</td><td><a href="/herramienta/revisiones/editar/%s">&#9999;</a> <a href="/herramienta/revisiones/borrar/%s" onclick="return confirm(\'Eliminar?\')">&#128465;</a></td></tr>' % (r[1], r[2], tc, tt, o, r[0], r[0])
+    filas = ''.join(_row(r) for r in revs)
+    empty = '<tr><td colspan="5" style="text-align:center;color:#999">Sin revisiones registradas</td></tr>'
+    css = CSS_BASE
+    return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Revisiones - Instapalma</title><style>' + css +
+        'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1a3a5c;color:white;padding:8px;text-align:left}td{padding:7px 8px;border-bottom:1px solid #eee}tr:hover td{background:#f5f7ff}.tag{padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}.tag-ok{background:#d4f0d4;color:#1a5c1a}.tag-inc{background:#fde8d8;color:#8b2500}.btn{background:#1a3a5c;color:white;padding:9px 20px;border-radius:8px;border:none;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:14px}.btn-back{background:#eee;color:#333;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:14px}' +
+        '</style></head><body><header><div><h1>Revisiones de Herramienta</h1><p>Instapalma</p></div></header><div class="container">' +
+        '<a href="/herramienta" class="btn-back">&#8592; Herramienta</a>' +
+        '<a href="/herramienta/revisiones/nueva" class="btn" style="margin-left:10px">+ Nueva revision</a>' +
+        '<table><tr><th>Fecha</th><th>Trabajador</th><th>Resultado</th><th>Observaciones</th><th></th></tr>' +
+        (filas if filas else empty) +
+        '</table></div></body></html>')
+
+@app.route('/herramienta/revisiones/nueva', methods=['GET','POST'])
+@app.route('/herramienta/revisiones/editar/<int:rid>', methods=['GET','POST'])
+def web_revision_form(rid=None):
+    from flask import request as req2, redirect
+    import datetime
+    if req2.method == 'POST':
+        fecha  = req2.form.get('fecha','').strip()
+        trab   = req2.form.get('trabajador','').strip()
+        result = req2.form.get('resultado','ok').strip()
+        obs    = req2.form.get('observaciones','').strip()
+        conn = get_db(); cur = conn.cursor()
+        if rid:
+            cur.execute('UPDATE herramienta_revisiones SET fecha=%s, trabajador=%s, resultado=%s, observaciones=%s WHERE id=%s', (fecha, trab, result, obs, rid))
+        else:
+            cur.execute('INSERT INTO herramienta_revisiones (fecha, trabajador, resultado, observaciones) VALUES (%s,%s,%s,%s)', (fecha, trab, result, obs))
+        conn.commit(); cur.close(); conn.close()
+        return redirect('/herramienta/revisiones')
+    datos = {'fecha': str(datetime.date.today()), 'trabajador':'', 'resultado':'ok', 'observaciones':''}
+    if rid:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT fecha, trabajador, resultado, observaciones FROM herramienta_revisiones WHERE id=%s', (rid,))
+        r = cur.fetchone(); cur.close(); conn.close()
+        if r: datos = {'fecha': str(r[0]), 'trabajador': r[1], 'resultado': r[2], 'observaciones': r[3] or ''}
+    titulo = 'Editar revision' if rid else 'Nueva revision'
+    sel_ok  = 'selected' if datos['resultado']=='ok' else ''
+    sel_inc = 'selected' if datos['resultado']=='incidencia' else ''
+    css = CSS_BASE
+    return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + titulo + ' - Instapalma</title><style>' + css +
+        '.form-group{margin-bottom:16px}label{display:block;font-weight:600;margin-bottom:4px;font-size:13px}input,select,textarea{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box}textarea{height:100px;resize:vertical}.btn{background:#1a3a5c;color:white;padding:10px 28px;border-radius:8px;border:none;font-weight:700;cursor:pointer;font-size:15px}.btn-back{background:#eee;color:#333;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:10px}' +
+        '</style></head><body><header><div><h1>' + titulo + '</h1><p>Instapalma</p></div></header><div class="container"><form method="POST">' +
+        '<div class="form-group"><label>Fecha</label><input type="date" name="fecha" value="' + datos['fecha'] + '" required></div>' +
+        '<div class="form-group"><label>Trabajador</label><input type="text" name="trabajador" value="' + datos['trabajador'] + '" placeholder="Nombre del trabajador" required></div>' +
+        '<div class="form-group"><label>Resultado</label><select name="resultado"><option value="ok" ' + sel_ok + '>OK - Todo correcto</option><option value="incidencia" ' + sel_inc + '>Incidencia</option></select></div>' +
+        '<div class="form-group"><label>Observaciones</label><textarea name="observaciones" placeholder="Herramienta faltante, estado, incidencias...">' + datos['observaciones'] + '</textarea></div>' +
+        '<a href="/herramienta/revisiones" class="btn-back">Cancelar</a>' +
+        '<button type="submit" class="btn">Guardar</button>' +
+        '</form></div></body></html>')
+
+@app.route('/herramienta/revisiones/borrar/<int:rid>')
+def web_revision_borrar(rid):
+    from flask import redirect
+    conn = get_db(); cur = conn.cursor()
+    cur.execute('DELETE FROM herramienta_revisiones WHERE id=%s', (rid,))
+    conn.commit(); cur.close(); conn.close()
+    return redirect('/herramienta/revisiones')
 
 @app.route('/herramienta/pdf/<modo>')
 def web_herramienta_pdf(modo):
