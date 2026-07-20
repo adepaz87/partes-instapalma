@@ -313,6 +313,158 @@ def limpiar_nombre_archivo(texto):
     texto = ''.join(c for c in texto if c.isalnum() or c in '_-.')
     return texto.upper()
 
+
+def generar_pdf_diario(fecha_str=None):
+    """Genera PDF resumen diario con todos los partes de una fecha. Formato tarjetas."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    import io as _io, os as _os
+    from datetime import datetime as _dt, date as _date
+
+    if not fecha_str:
+        fecha_str = str(_date.today())
+
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "SELECT cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante "
+        "FROM partes WHERE fecha=%s ORDER BY id ASC",
+        (fecha_str,)
+    )
+    partes = cur.fetchall()
+    cur.close(); conn.close()
+
+    AZUL       = colors.HexColor('#1a3a5c')
+    AZUL_CLARO = colors.HexColor('#2e5c8a')
+    VERDE      = colors.HexColor('#27ae60')
+    NARANJA    = colors.HexColor('#e67e22')
+    GRIS       = colors.HexColor('#f5f5f5')
+    W          = 17 * cm   # ancho útil
+    COL_L      = 3.5 * cm
+    COL_R      = W - COL_L
+
+    lbl_style = ParagraphStyle('lbl', fontName='Helvetica-Bold', fontSize=9,
+        textColor=AZUL, leading=12)
+    val_style  = ParagraphStyle('val', fontName='Helvetica', fontSize=9, leading=12)
+    tit_style  = ParagraphStyle('tit', fontName='Helvetica-Bold', fontSize=10,
+        textColor=colors.white, leading=13)
+    est_style  = ParagraphStyle('est', fontName='Helvetica-Bold', fontSize=9,
+        textColor=colors.white, alignment=TA_CENTER, leading=12)
+    head_style = ParagraphStyle('head', fontName='Helvetica-Bold', fontSize=16,
+        textColor=AZUL, alignment=TA_CENTER)
+    sub_style  = ParagraphStyle('sub', fontName='Helvetica', fontSize=10,
+        textColor=colors.grey, alignment=TA_CENTER)
+
+    buffer = _io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+        rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
+    elements = []
+
+    # ── Cabecera documento ──────────────────────────────────────────────────
+    LOGO_PATH = _os.path.join(_os.path.dirname(__file__), 'logo.jpg')
+    from reportlab.platypus import Image as RLImage2
+    if _os.path.exists(LOGO_PATH):
+        _lw = 3.5 * cm
+        _lh = _lw / (1024/219)
+        logo = RLImage2(LOGO_PATH, width=_lw, height=_lh)
+    else:
+        logo = Paragraph('INSTAPALMA', head_style)
+
+    fecha_fmt = _dt.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if '-' in fecha_str else fecha_str
+    cab_tbl = Table([[logo, Paragraph('PARTE DIARIO', head_style)]], colWidths=[4.5*cm, 12.5*cm])
+    cab_tbl.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
+    elements.append(cab_tbl)
+    elements.append(Paragraph(fecha_fmt, sub_style))
+    elements.append(HRFlowable(width='100%', thickness=2, color=AZUL, spaceAfter=8))
+
+    if not partes:
+        elements.append(Spacer(1, 1*cm))
+        elements.append(Paragraph('No hay partes registrados para esta fecha.', sub_style))
+    else:
+        for p in partes:
+            cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante = p
+
+            # Normalizar valores vacíos
+            def _v(x): return (x or '').strip()
+            cliente     = _v(cliente)
+            obra        = _v(obra)
+            operarios   = _v(operarios)
+            albaranes   = _v(albaranes)
+            mat_stock   = _v(material_stock)
+            dev_alm     = _v(devolucion_almacen)
+            descripcion = _v(descripcion)
+            terminado   = _v(terminado).upper()
+            t_restante  = _v(tiempo_restante)
+
+            # Título tarjeta: OBRA (CLIENTE)
+            titulo_txt = obra.upper()
+            if cliente:
+                titulo_txt += f' ({cliente.upper()})'
+
+            # Encabezado azul
+            enc = Table([[Paragraph(titulo_txt, tit_style)]], colWidths=[W])
+            enc.setStyle(TableStyle([
+                ('BACKGROUND',(0,0),(-1,-1),AZUL),
+                ('PADDING',(0,0),(-1,-1),7),
+                ('TOPPADDING',(0,0),(-1,-1),5),
+                ('BOTTOMPADDING',(0,0),(-1,-1),5),
+            ]))
+            elements.append(enc)
+
+            # Filas de contenido
+            filas = []
+            if operarios:
+                filas.append([Paragraph('OPERARIOS', lbl_style), Paragraph(operarios, val_style)])
+            if descripcion:
+                filas.append([Paragraph('TRABAJOS', lbl_style), Paragraph(descripcion, val_style)])
+            if mat_stock and normalizar(mat_stock) not in ('ninguno','no',''):
+                filas.append([Paragraph('MATERIAL STOCK', lbl_style), Paragraph(mat_stock, val_style)])
+            if albaranes and normalizar(albaranes) not in ('ninguno','no',''):
+                filas.append([Paragraph('ALBARANES', lbl_style), Paragraph(albaranes, val_style)])
+            if dev_alm and normalizar(dev_alm) not in ('ninguno','no',''):
+                filas.append([Paragraph('DEV. ALMACÉN', lbl_style), Paragraph(dev_alm, val_style)])
+
+            if filas:
+                t_body = Table(filas, colWidths=[COL_L, COL_R])
+                t_body.setStyle(TableStyle([
+                    ('GRID',(0,0),(-1,-1),0.5,colors.lightgrey),
+                    ('PADDING',(0,0),(-1,-1),6),
+                    ('VALIGN',(0,0),(-1,-1),'TOP'),
+                    ('ROWBACKGROUNDS',(0,0),(-1,-1),[colors.white, GRIS]),
+                    ('FONTSIZE',(0,0),(-1,-1),9),
+                ]))
+                elements.append(t_body)
+
+            # Estado
+            if terminado in ('SÍ','SI','S','YES','TERMINADO','TRUE','1'):
+                est_color = VERDE
+                est_texto = 'ESTADO: TERMINADO'
+            else:
+                est_color = AZUL_CLARO
+                sufijo = f' — Tiempo restante: {t_restante}' if t_restante and normalizar(t_restante) not in ('ninguno','no','') else ''
+                est_texto = f'ESTADO: EN CURSO{sufijo}'
+
+            t_est = Table([[Paragraph(est_texto, est_style)]], colWidths=[W])
+            t_est.setStyle(TableStyle([
+                ('BACKGROUND',(0,0),(-1,-1),est_color),
+                ('PADDING',(0,0),(-1,-1),5),
+                ('ALIGN',(0,0),(-1,-1),'CENTER'),
+            ]))
+            elements.append(t_est)
+            elements.append(Spacer(1, 0.5*cm))
+
+    # Pie
+    pie_style = ParagraphStyle('pie', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
+    elements.append(HRFlowable(width='100%', thickness=0.5, color=colors.lightgrey, spaceAfter=4))
+    elements.append(Paragraph(f'Instapalma · Parte Diario {fecha_fmt} · Generado {_dt.now().strftime("%d/%m/%Y %H:%M")}', pie_style))
+
+    doc.build(elements)
+    return buffer.getvalue()
+
 def generar_pdf(datos):
     """Genera el PDF del parte y devuelve los bytes."""
     buffer = io.BytesIO()
@@ -3231,6 +3383,22 @@ def get_parte_by_id(parte_id):
         return r
     except:
         return None
+
+
+@app.route('/partes/diario', methods=['GET'])
+@app.route('/partes/diario/<fecha>', methods=['GET'])
+def pdf_parte_diario(fecha=None):
+    from flask import request as _req, Response
+    from datetime import date as _date
+    if not fecha:
+        fecha = _req.args.get('fecha', str(_date.today()))
+    try:
+        pdf_bytes = generar_pdf_diario(fecha)
+    except Exception as e:
+        return f"Error generando PDF: {e}", 500
+    nombre = f"PARTE-DIARIO-{fecha}.pdf"
+    return Response(pdf_bytes, mimetype='application/pdf',
+        headers={'Content-Disposition': f'inline; filename="{nombre}"'})
 
 @app.route('/partes', methods=['GET'])
 def listar_partes():
