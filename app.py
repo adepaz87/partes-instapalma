@@ -2285,22 +2285,26 @@ def webhook():
                 enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
             else:
                 enviar_whatsapp(SUPERVISOR_WA, caption)
-            # Email con PDF
+            # Email con PDF (en thread para no bloquear)
             if mid:
-                try:
-                    pdf_bytes = generar_pdf_mantenimiento_ge({**datos, 'operario': nombre_operario(numero)})
-                    loc_clean = datos.get('localizacion','GE').replace(' ','_')
-                    fecha_clean = datos.get('fecha','').replace('/','')
-                    fname = f"ManttoGE_{loc_clean}_{fecha_clean}.pdf"
-                    enviar_email_con_pdf(
-                        destinatario=GMAIL_USER,
-                        asunto=f"Mantenimiento GE — {datos.get('localizacion','')} — {datos.get('fecha','')}",
-                        cuerpo=f"Adjunto el informe de mantenimiento preventivo del grupo electrógeno.\n\nUbicación: {datos.get('localizacion','')}\nFecha: {datos.get('fecha','')}\nMarca/Modelo: {datos.get('marca','')} {datos.get('modelo','')}\nHoras: {datos.get('horas','')}",
-                        pdf_bytes=pdf_bytes,
-                        nombre_pdf=fname
-                    )
-                except Exception as e:
-                    print(f"Error email mantto GE: {e}")
+                import threading as _th_ge
+                _datos_ge = {**datos, 'operario': nombre_operario(numero)}
+                def _enviar_email_ge():
+                    try:
+                        pdf_bytes = generar_pdf_mantenimiento_ge(_datos_ge)
+                        loc_clean = _datos_ge.get('localizacion','GE').replace(' ','_')
+                        fecha_clean = _datos_ge.get('fecha','').replace('/','')
+                        fname = f"ManttoGE_{loc_clean}_{fecha_clean}.pdf"
+                        enviar_email_con_pdf(
+                            destinatario=GMAIL_USER,
+                            asunto=f"Mantenimiento GE — {_datos_ge.get('localizacion','')} — {_datos_ge.get('fecha','')}",
+                            cuerpo=f"Adjunto el informe de mantenimiento preventivo del grupo electrógeno.\n\nUbicación: {_datos_ge.get('localizacion','')}\nFecha: {_datos_ge.get('fecha','')}\nMarca/Modelo: {_datos_ge.get('marca','')} {_datos_ge.get('modelo','')}\nHoras: {_datos_ge.get('horas','')}",
+                            pdf_bytes=pdf_bytes,
+                            nombre_pdf=fname
+                        )
+                    except Exception as e:
+                        print(f"Error email mantto GE: {e}")
+                _th_ge.Thread(target=_enviar_email_ge, daemon=True).start()
             msg.body("✅ *Mantenimiento registrado.*\n\nEl informe se ha enviado al supervisor. ¡Gracias!")
         elif es_cancelacion(incoming_msg):
             borrar_estado(numero)
