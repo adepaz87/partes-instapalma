@@ -5793,10 +5793,11 @@ def web_devolucion():
         return redirect('/herramienta')
     # GET: mostrar lista de herramienta en obra
     conn = get_db(); cur = conn.cursor()
-    sql = ('SELECT ho.id, h.nombre, ho.operario_nombre, ho.obra, ho.fecha_alta::text'
+    sql = ('SELECT ho.id, h.nombre, ho.nombre_operario, ho.obra, ho.fecha_alta::text'
            ' FROM herramienta_obra ho'
            ' JOIN herramienta h ON h.id = ho.herramienta_id'
-           ' ORDER BY h.nombre, ho.operario_nombre')
+           ' WHERE ho.activo = true'
+           ' ORDER BY h.nombre, ho.nombre_operario')
     cur.execute(sql)
     en_obra = cur.fetchall()
     cur.close(); conn.close()
