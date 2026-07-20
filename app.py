@@ -3449,8 +3449,8 @@ def admin_sync_obra():
             row = cur.fetchone()
             if row:
                 cur.execute(
-                    'INSERT INTO herramienta_obra (herramienta_id, obra, responsable, fecha_alta, activo) VALUES (%s,%s,%s,%s,true)',
-                    (row[0], obra, resp_, fecha)
+                    'INSERT INTO herramienta_obra (herramienta_id, herramienta_nombre, nombre_operario, obra, fecha_alta, activo) VALUES (%s,%s,%s,%s,%s,true)',
+                    (row[0], nombre, resp_, obra, fecha)
                 )
                 insertadas += 1
         conn.commit(); cur.close(); conn.close()
