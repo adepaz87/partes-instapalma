@@ -5701,6 +5701,7 @@ def web_herramienta():
       <button class='tab' onclick='showTab("obra")'>🏗️ En Obra ({len(en_obra)})</button>
       <button class='tab' onclick='showTab("pers")'>👷 Personal ({len(personal)})</button>
       <a href='/herramienta/revisiones' class='tab' style='text-decoration:none'>📋 Revisiones</a>
+      <a href='/admin/usuarios' class='btn-add' style='margin-left:8px;background:#555'>📱 Usuarios bot</a>
     </div>
 
     <div id='almacen' class='section active'>
@@ -6041,6 +6042,81 @@ def web_revision_borrar(rid):
     cur.execute('DELETE FROM herramienta_revisiones WHERE id=%s', (rid,))
     conn.commit(); cur.close(); conn.close()
     return redirect('/herramienta/revisiones')
+
+
+@app.route('/admin/usuarios')
+def admin_usuarios():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT numero, paso, updated_at
+        FROM conversaciones_db
+        ORDER BY updated_at DESC
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    def _nombre(num):
+        limpio = num.replace('whatsapp:','').replace('+','').strip()
+        return OPERARIOS.get(limpio, '—')
+
+    def _tel(num):
+        return num.replace('whatsapp:','').replace('+','').strip()
+
+    filas = ''
+    for r in rows:
+        num = r[0]
+        paso = r[1] or '—'
+        updated = str(r[2])[:16] if r[2] else '—'
+        nombre = _nombre(num)
+        tel = _tel(num)
+        conocido = '✅' if nombre != '—' else '❓'
+        filas += (
+            f"<tr>"
+            f"<td>{conocido}</td>"
+            f"<td><b>{nombre}</b></td>"
+            f"<td style='font-family:monospace'>{tel}</td>"
+            f"<td>{paso}</td>"
+            f"<td>{updated}</td>"
+            f"</tr>"
+        )
+
+    total = len(rows)
+    conocidos = sum(1 for r in rows if _nombre(r[0]) != '—')
+    desconocidos = total - conocidos
+
+    return f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Usuarios del bot — Instapalma</title>
+<style>
+{CSS_BASE}
+body{{font-family:Arial,sans-serif;background:#f4f6f8;padding:20px}}
+.card{{background:white;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.08);max-width:900px;margin:0 auto}}
+h2{{color:#1a3a5c;margin-bottom:4px}}
+.stats{{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}}
+.stat{{background:#f0f4ff;border-radius:8px;padding:12px 20px;text-align:center}}
+.stat b{{display:block;font-size:22px;color:#1a3a5c}}
+.stat span{{font-size:12px;color:#666}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+th{{background:#1a3a5c;color:white;padding:10px 8px;text-align:left}}
+td{{padding:9px 8px;border-bottom:1px solid #eee}}
+tr:hover td{{background:#f5f7ff}}
+.btn-back{{background:#eee;color:#333;padding:9px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:16px}}
+</style></head>
+<body>
+<div class="card">
+  <a href="/" class="btn-back">← Dashboard</a>
+  <h2>📱 Usuarios del bot</h2>
+  <p style="color:#666;font-size:13px;margin-bottom:16px">Teléfonos que han interactuado con el bot de WhatsApp</p>
+  <div class="stats">
+    <div class="stat"><b>{total}</b><span>Total</span></div>
+    <div class="stat"><b>{conocidos}</b><span>Identificados</span></div>
+    <div class="stat"><b style="color:#e67e22">{desconocidos}</b><span>Sin identificar</span></div>
+  </div>
+  <table>
+    <tr><th></th><th>Nombre</th><th>Teléfono</th><th>Último paso</th><th>Última actividad</th></tr>
+    {filas if filas else "<tr><td colspan='5' style='text-align:center;color:#999;padding:20px'>Sin registros</td></tr>"}
+  </table>
+</div>
+</body></html>'''
 
 @app.route('/herramienta/pdf/<modo>')
 def web_herramienta_pdf(modo):
