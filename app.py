@@ -344,8 +344,6 @@ def generar_pdf_diario(fecha_str=None):
     )
     partes = cur.fetchall()
     cur.close(); conn.close()
-    # Actualizar fecha_str al formato display
-    fecha_str = fecha_dmy
 
     AZUL       = colors.HexColor('#1a3a5c')
     AZUL_CLARO = colors.HexColor('#2e5c8a')
@@ -383,7 +381,7 @@ def generar_pdf_diario(fecha_str=None):
     else:
         logo = Paragraph('INSTAPALMA', head_style)
 
-    fecha_fmt = _dt.strptime(fecha_str, '%Y-%m-%d').strftime('%d/%m/%Y') if '-' in fecha_str else fecha_str
+    fecha_fmt = fecha_dmy
     cab_tbl = Table([[logo, Paragraph('PARTE DIARIO', head_style)]], colWidths=[4.5*cm, 12.5*cm])
     cab_tbl.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
@@ -3399,14 +3397,22 @@ def get_parte_by_id(parte_id):
 @app.route('/partes/diario/<fecha>', methods=['GET'])
 def pdf_parte_diario(fecha=None):
     from flask import request as _req, Response
-    from datetime import date as _date
+    from datetime import date as _date, datetime as _dtp2
     if not fecha:
         fecha = _req.args.get('fecha', str(_date.today()))
+    # Normalizar: YYYY-MM-DD o DD-MM-YYYY (con guion, safe en URL) -> DD/MM/YYYY
+    try:
+        if len(fecha) == 10 and fecha[4] == '-':
+            fecha = _dtp2.strptime(fecha, '%Y-%m-%d').strftime('%d/%m/%Y')
+        elif len(fecha) == 10 and fecha[2] == '-':
+            fecha = _dtp2.strptime(fecha, '%d-%m-%Y').strftime('%d/%m/%Y')
+    except Exception:
+        pass
     try:
         pdf_bytes = generar_pdf_diario(fecha)
     except Exception as e:
         return f"Error generando PDF: {e}", 500
-    nombre = f"PARTE-DIARIO-{fecha}.pdf"
+    nombre = f"PARTE-DIARIO-{fecha.replace('/', '-')}.pdf"
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'inline; filename="{nombre}"'})
 
