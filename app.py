@@ -4184,6 +4184,15 @@ def dashboard():
     </table>
   </div>
 
+  <div class="card card-full">
+    <div class="card-head"><h2>📄 Informe PRL</h2><a href="https://drive.google.com/file/d/12U4pynCU_Ob7DxrNA5qKtpxxVFdtYDb5/view?usp=drivesdk" target="_blank">Abrir en Drive →</a></div>
+    <div style="width:100%;height:700px;border-radius:8px;overflow:hidden;border:1px solid #e0e0e0">
+      <iframe src="https://drive.google.com/file/d/12U4pynCU_Ob7DxrNA5qKtpxxVFdtYDb5/preview"
+              width="100%" height="700" frameborder="0" allowfullscreen
+              style="border:none;display:block"></iframe>
+    </div>
+  </div>
+
 </div>
 </body></html>'''
 
