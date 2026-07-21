@@ -4117,6 +4117,7 @@ def dashboard():
     <a href="/herramienta">🔧 Herramienta</a>
     <a href="/vacaciones">🏖️ Vacaciones</a>
     <a href="/vehiculos">🚐 Vehículos</a>
+    <a href="/mantenimientos">🔩 Mantenimientos</a>
     <a href="/resumenes">📊 Resúmenes</a>
   </nav>
 </header>
@@ -4240,6 +4241,80 @@ def descargar_pdf_vehiculo(v_id):
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre}"'})
 
+
+
+# ── Panel Mantenimientos ──────────────────────────────────────────────────────
+@app.route('/mantenimientos')
+def panel_mantenimientos():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            SELECT id, matricula, marca_modelo, mes, km_inicio, km_fin,
+                   proximo_aceite, estado_neumaticos, mantenimientos,
+                   observaciones, operario, created_at
+            FROM vehiculos
+            WHERE mantenimientos IS NOT NULL AND TRIM(mantenimientos) != ''
+            ORDER BY created_at DESC
+        """)
+        rows = cur.fetchall(); cur.close(); conn.close()
+    except Exception as e:
+        rows = []
+
+    filas = ""
+    for r in rows:
+        vid, mat, modelo, mes, km_i, km_f, prox_aceite, neu, manttos, obs, op, cat = r
+        filas += f"""<tr class="clickable" onclick="window.location='/vehiculos/{vid}'">
+            <td><b>{mat or "&mdash;"}</b></td>
+            <td>{modelo or "&mdash;"}</td>
+            <td>{mes or "&mdash;"}</td>
+            <td>{km_i or "&mdash;"} &rarr; {km_f or "&mdash;"}</td>
+            <td>{prox_aceite or "&mdash;"}</td>
+            <td>{neu or "&mdash;"}</td>
+            <td style="max-width:300px;white-space:pre-wrap">{manttos or "&mdash;"}</td>
+            <td>{obs or "&mdash;"}</td>
+            <td>{nombre_operario(op or "")}</td>
+            <td>{str(cat)[:10] if cat else "&mdash;"}</td>
+            <td><a href='/vehiculos/{vid}/pdf' onclick='event.stopPropagation()'>PDF</a></td>
+        </tr>"""
+
+    sin_registros = "<tr><td colspan=11 class='empty'>Sin mantenimientos registrados</td></tr>"
+
+    html = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>Mantenimientos - Instapalma</title>"
+        "<style>"
+        "* { box-sizing:border-box; margin:0; padding:0 }"
+        "body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f2f5; color:#333 }"
+        "header { background:#1a3a5c; color:white; padding:20px 30px; display:flex; align-items:center; justify-content:space-between }"
+        "header h1 { font-size:22px; font-weight:700 }"
+        "header p { font-size:13px; opacity:.75; margin-top:2px }"
+        ".wrap { padding:20px 30px 30px; overflow-x:auto }"
+        "table { width:100%; border-collapse:collapse; background:white; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); font-size:13px }"
+        "th { background:#1a3a5c; color:white; padding:12px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap }"
+        "td { padding:10px; border-bottom:1px solid #f0f0f0; vertical-align:top }"
+        "tr:last-child td { border-bottom:none }"
+        "tr.clickable:hover td { background:#eef3fa; cursor:pointer }"
+        ".empty { text-align:center; padding:60px; color:#aaa; font-size:15px }"
+        ".back { display:inline-block; margin:20px 30px 10px; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px }"
+        ".back:hover { text-decoration:underline }"
+        "</style></head><body>"
+        "<header><div><h1>Mantenimientos Realizados</h1><p>Instapalma - Historial por vehiculo</p></div></header>"
+        "<div class='wrap'><table>"
+        "<thead><tr>"
+        "<th>Matricula</th><th>Modelo</th><th>Mes</th><th>Km</th>"
+        "<th>Prox. aceite</th><th>Neumaticos</th><th>Mantenimientos</th>"
+        "<th>Observaciones</th><th>Operario</th><th>Fecha</th><th>PDF</th>"
+        "</tr></thead>"
+        "<tbody>"
+        + (filas if rows else sin_registros) +
+        "</tbody></table></div>"
+        "<div><a href='/vehiculos' class='back'>&larr; Ver Vehiculos</a> &nbsp; <a href='/' class='back'>Dashboard</a></div>"
+        "</body></html>"
+    )
+
+    from flask import Response
+    return Response(html, mimetype='text/html')
 
 # ── Panel Vacaciones ──────────────────────────────────────────────────────────
 @app.route('/vacaciones')
