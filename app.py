@@ -4204,7 +4204,7 @@ def panel_vehiculos():
     <th>Km inicio</th><th>Km fin</th><th>Operario</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{''.join([filas]) if rows else "<tr><td colspan=9 class='empty'>Sin registros</td></tr>"}</tbody>
     </table></div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
     </body></html>"""
     from flask import Response
     return Response(html, mimetype='text/html')
@@ -4375,7 +4375,7 @@ def panel_vacaciones():
     <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th><th></th></tr></thead>
     <tbody>{filas_vac}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -4690,7 +4690,7 @@ def panel_resumenes():
     <th>#</th><th>Operario</th><th>Mes</th><th>H. Extra</th><th>Días Vac.</th><th>Gastos</th><th>Foto</th><th>Fecha</th><th>PDF</th>
     </tr></thead><tbody>{filas}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -5705,7 +5705,7 @@ def panel_almacen():
 
     <div style='margin-top:16px'><a href='/almacen/albaranes' style='color:#1a3a5c;font-weight:700'>📋 Ver albaranes →</a></div>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -5836,7 +5836,7 @@ def panel_albaranes():
     <table><thead><tr><th>Nº Albarán</th><th>Operario</th><th>Obra</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{filas}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -6170,7 +6170,7 @@ def web_herramienta_form(mid=None):
     <label>Observaciones</label><textarea name='observaciones' rows='3'>{datos["observaciones"]}</textarea>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
-    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Volver</a></div></body></html>"""
+    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Herramienta</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div></body></html>"""
 
 
 @app.route('/herramienta/alta_obra', methods=['GET','POST'])
