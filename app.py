@@ -4117,7 +4117,7 @@ def dashboard():
     <a href="/herramienta">🔧 Herramienta</a>
     <a href="/vacaciones">🏖️ Vacaciones</a>
     <a href="/vehiculos">🚐 Vehículos</a>
-    <a href="/mantenimientos">🔩 Mantenimientos</a>
+    <a href="/mantenimientos-ge">⚡ GE TBSA</a>
     <a href="/resumenes">📊 Resúmenes</a>
   </nav>
 </header>
@@ -5896,6 +5896,103 @@ def web_mantenimiento_ge_pdf(ge_id):
     except Exception as e:
         return f"Error: {e}", 500
 
+
+
+# ── Panel Mantenimientos GE TBSA ──────────────────────────────────────────────
+@app.route('/mantenimientos-ge')
+def panel_mantenimientos_ge():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            SELECT id, fecha, localizacion, marca, modelo, horas,
+                   checklist, mediciones, observaciones_generales, operario, created_at
+            FROM mantenimiento_ge
+            ORDER BY created_at DESC
+        """)
+        rows = cur.fetchall(); cur.close(); conn.close()
+    except Exception as e:
+        rows = []
+
+    filas = ""
+    for r in rows:
+        mid, fecha, loc, marca, modelo, horas, checklist, mediciones, obs, op, cat = r
+        # Contar checks OK/NO
+        try:
+            import json as _json
+            cl = _json.loads(checklist) if isinstance(checklist, str) else (checklist or {})
+            ok_count = sum(1 for v in cl.values() if v.get('resultado') == 'OK')
+            no_count = sum(1 for v in cl.values() if v.get('resultado') == 'NO')
+            checks = f"<span style='color:#2e7d32'>✓ {ok_count}</span>"
+            if no_count:
+                checks += f" <span style='color:#c62828'>✗ {no_count}</span>"
+        except:
+            checks = "—"
+
+        badge_color = "#c62828" if no_count > 0 else "#2e7d32"
+        estado_txt = "⚠️ Incidencia" if no_count > 0 else "✅ OK"
+        estado_color = "#fff3e0" if no_count > 0 else "#e8f5e9"
+
+        filas += f"""<tr class="clickable" onclick="window.location='/mantto_ge/{mid}/pdf'">
+            <td><b>{fecha or '—'}</b></td>
+            <td>{loc or '—'}</td>
+            <td>{marca or '—'} {modelo or ''}</td>
+            <td>{horas or '—'} h</td>
+            <td>{checks}</td>
+            <td style="background:{estado_color};text-align:center;font-weight:600;color:{badge_color}">{estado_txt}</td>
+            <td>{op or '—'}</td>
+            <td><a href='/mantto_ge/{mid}/pdf' onclick='event.stopPropagation()' style='color:#1a3a5c;font-weight:600'>📄 PDF</a></td>
+        </tr>"""
+
+    sin_reg = "<tr><td colspan=8 class='empty'>Sin mantenimientos registrados</td></tr>"
+
+    html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width,initial-scale=1'>
+    <title>Mantenimientos GE — Instapalma</title>
+    <style>
+      * {{ box-sizing:border-box; margin:0; padding:0 }}
+      body {{ font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#f0f2f5; color:#333 }}
+      header {{ background:#1a3a5c; color:white; padding:20px 30px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px }}
+      header h1 {{ font-size:22px; font-weight:700 }}
+      header p {{ font-size:13px; opacity:.75; margin-top:2px }}
+      .nav {{ display:flex; gap:12px; flex-wrap:wrap }}
+      .nav a {{ color:rgba(255,255,255,.85); text-decoration:none; font-size:13px; font-weight:500; padding:6px 12px; border-radius:6px; background:rgba(255,255,255,.1) }}
+      .nav a:hover {{ background:rgba(255,255,255,.2) }}
+      .kpis {{ display:flex; gap:16px; padding:20px 30px; flex-wrap:wrap }}
+      .kpi {{ background:white; border-radius:10px; padding:16px 24px; box-shadow:0 1px 4px rgba(0,0,0,.08); min-width:120px }}
+      .kpi .num {{ font-size:28px; font-weight:700; color:#1a3a5c }}
+      .kpi .lbl {{ font-size:12px; color:#888; margin-top:2px }}
+      .kpi.warn .num {{ color:#c62828 }}
+      .wrap {{ padding:0 30px 30px; overflow-x:auto }}
+      table {{ width:100%; border-collapse:collapse; background:white; border-radius:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.08); font-size:13px }}
+      th {{ background:#1a3a5c; color:white; padding:12px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap }}
+      td {{ padding:10px; border-bottom:1px solid #f0f0f0; vertical-align:middle }}
+      tr:last-child td {{ border-bottom:none }}
+      tr.clickable:hover td {{ background:#eef3fa; cursor:pointer }}
+      .empty {{ text-align:center; padding:60px; color:#aaa; font-size:15px }}
+      .back {{ display:inline-block; margin:20px 30px; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px }}
+    </style></head><body>
+    <header>
+      <div><h1>⚡ Mantenimientos Grupos Electrógenos</h1><p>TBSA — Instapalma</p></div>
+      <nav class="nav">
+        <a href="/">🏠 Dashboard</a>
+        <a href="/partes">📋 Partes</a>
+        <a href="/vehiculos">🚐 Vehículos</a>
+      </nav>
+    </header>
+    <div class='kpis'>
+      <div class='kpi'><div class='num'>{len(rows)}</div><div class='lbl'>Total mantenimientos</div></div>
+    </div>
+    <div class='wrap'><table>
+    <thead><tr>
+      <th>Fecha</th><th>Ubicación</th><th>Marca / Modelo</th><th>Horas</th>
+      <th>Checks</th><th>Estado</th><th>Técnico</th><th>PDF</th>
+    </tr></thead>
+    <tbody>{filas if rows else sin_reg}</tbody>
+    </table></div>
+    <a href='/' class='back'>← Dashboard</a>
+    </body></html>"""
+    from flask import Response
+    return Response(html, mimetype='text/html')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
