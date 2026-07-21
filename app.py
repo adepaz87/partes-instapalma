@@ -3409,6 +3409,8 @@ CSS_BASE = """
   .estado-curso { background:#fff3e0; border:1px solid #ffcc80; border-radius:8px; padding:14px 20px; text-align:center; font-weight:700; color:#e65100; font-size:16px; }
   .btn-pdf { display:inline-block; margin-top:20px; background:#1a3a5c; color:white; padding:10px 22px; border-radius:8px; text-decoration:none; font-size:14px; font-weight:600; }
   .btn-pdf:hover { background:#14304f; }
+  .btn-home { display:inline-block; background:#3D35E8; color:white; text-decoration:none; font-weight:700; font-size:13px; padding:8px 18px; border-radius:8px; white-space:nowrap; }
+  .btn-home:hover { opacity:.85; }
   @media (max-width:600px) { .grid2 { grid-template-columns:1fr; } .wrap { padding:0 12px 20px; } header h1 { font-size:17px; } }
 """
 
@@ -3513,6 +3515,7 @@ def listar_partes():
 <body>
 <header>
   <div><h1>⚡ Partes de Trabajo — Instapalma</h1><p>Panel de control · Haz clic en un parte para ver el detalle</p></div>
+  <a href='/' class='btn-home'>🏠 Dashboard</a>
 </header>
 <div class="stats">
   <div class="stat"><div class="num">{total}</div><div class="lbl">Total partes</div></div>
@@ -3521,7 +3524,6 @@ def listar_partes():
   <div class="stat"><div class="num">{n_pdf}</div><div class="lbl">PDFs descargados</div></div>
 </div>
 <div class="wrap">{tabla}</div>
-<div style='padding:8px 30px 20px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
@@ -3547,8 +3549,8 @@ def ver_parte(parte_id):
 <body>
 <header>
   <div><h1>⚡ Instapalma — Ficha de Parte</h1><p>Detalle completo del parte de trabajo</p></div>
+  <a href='/' class='btn-home'>🏠 Dashboard</a>
 </header>
-<a class="back" href="/partes">← Volver al listado</a>
 <div class="ficha">
   <div class="ficha-header">
     <h2>Parte — {r[2] or ''}</h2>
@@ -3569,7 +3571,6 @@ def ver_parte(parte_id):
     <a class="btn-pdf" href="/partes/{parte_id}/pdf">⬇ Descargar PDF</a>
   </div>
 </div>
-<div style='padding:8px 30px 20px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
@@ -4220,7 +4221,7 @@ def panel_vehiculos():
     html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
     <title>Vehículos — Instapalma</title>
     <style>{CSS_BASE}</style></head><body>
-    <header><div><h1>🚗 Partes de Vehículos</h1><p>Instapalma</p></div></header>
+    <header><div><h1>🚗 Partes de Vehículos</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div class='wrap'><table>
     <thead><tr><th>#</th><th>Matrícula</th><th>Modelo</th><th>Mes</th>
     <th>Km inicio</th><th>Km fin</th><th>Operario</th><th>Fecha</th><th>PDF</th></tr></thead>
@@ -4321,7 +4322,7 @@ def panel_mantenimientos():
         ".back { display:inline-block; margin:20px 30px 10px; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px }"
         ".back:hover { text-decoration:underline }"
         "</style></head><body>"
-        "<header><div><h1>Mantenimientos Realizados</h1><p>Instapalma - Historial por vehiculo</p></div></header>"
+        "<header><div><h1>Mantenimientos Realizados</h1><p>Instapalma - Historial por vehiculo</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>"
         "<div class='wrap'><table>"
         "<thead><tr>"
         "<th>Matricula</th><th>Modelo</th><th>Mes</th><th>Km</th>"
@@ -4386,7 +4387,7 @@ def panel_vacaciones():
     .badge-no{{background:#c62828;color:white;padding:3px 10px;border-radius:10px;font-size:11px}}
     .badge-pend{{background:#e65100;color:white;padding:3px 10px;border-radius:10px;font-size:11px}}
     </style></head><body>
-    <header><div><h1>🌴 Vacaciones</h1><p>Instapalma</p></div>
+    <header><div><h1>🌴 Vacaciones</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a>
     <a href='/vacaciones/saldo/nuevo' style='background:white;color:#1a3a5c;padding:8px 16px;border-radius:8px;font-weight:700;text-decoration:none;font-size:13px'>+ Añadir saldo</a>
     </header>
     <div class='wrap' style='padding-top:20px'>
@@ -4450,7 +4451,7 @@ def editar_saldo(op=None):
     <style>{CSS_BASE} label{{display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#555}}
     input{{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:16px;box-sizing:border-box}}
     .btn{{background:#1a3a5c;color:white;padding:12px 28px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}}</style></head><body>
-    <header><div><h1>🌴 {titulo}</h1><p>Instapalma</p></div></header>
+    <header><div><h1>🌴 {titulo}</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
     <form method='POST'>
     <label>Número operario (ej: 34636606175)</label><input name='operario' value='{datos["operario"]}' required>
@@ -4706,7 +4707,7 @@ def panel_resumenes():
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
     <title>Resumen Fin de Mes — Instapalma</title>
     <style>{CSS_BASE}</style></head><body>
-    <header><div><h1>📊 Resumen Fin de Mes</h1><p>Instapalma</p></div></header>
+    <header><div><h1>📊 Resumen Fin de Mes</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div class='wrap' style='padding-top:20px'>
     <table><thead><tr>
     <th>#</th><th>Operario</th><th>Mes</th><th>H. Extra</th><th>Días Vac.</th><th>Gastos</th><th>Foto</th><th>Fecha</th><th>PDF</th>
@@ -5704,7 +5705,7 @@ def panel_almacen():
     </style></head><body>
     <header>
       <div><h1>📦 Almacén</h1><p>Instapalma</p></div>
-      <a href='/almacen/material/nuevo' style='background:white;color:#1a3a5c;padding:8px 16px;border-radius:8px;font-weight:700;text-decoration:none;font-size:13px'>+ Añadir material</a>
+      <div style='display:flex;gap:10px;align-items:center'><a href='/' class='btn-home'>🏠 Dashboard</a><a href='/almacen/material/nuevo' style='background:white;color:#1a3a5c;padding:8px 16px;border-radius:8px;font-weight:700;text-decoration:none;font-size:13px'>+ Añadir material</a></div>
     </header>
     <div class='wrap' style='padding-top:20px'>
 
@@ -5769,7 +5770,7 @@ def editar_material(mid=None):
     <style>{CSS_BASE} label{{display:block;margin-bottom:4px;font-size:13px;font-weight:600;color:#555}}
     input{{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:16px;box-sizing:border-box}}
     .btn{{background:#1a3a5c;color:white;padding:12px 28px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}}</style></head><body>
-    <header><div><h1>📦 {titulo}</h1><p>Instapalma</p></div></header>
+    <header><div><h1>📦 {titulo}</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
     <form method='POST'>
     <label>Nombre del material</label><input name='nombre' value='{datos["nombre"]}' required>
@@ -5853,7 +5854,7 @@ def panel_albaranes():
 
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Albaranes — Instapalma</title>
     <style>{CSS_BASE}</style></head><body>
-    <header><div><h1>📋 Albaranes de Almacén</h1><p>Instapalma</p></div></header>
+    <header><div><h1>📋 Albaranes de Almacén</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div class='wrap' style='padding-top:20px'>
     <table><thead><tr><th>Nº Albarán</th><th>Operario</th><th>Obra</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{filas}</tbody></table>
@@ -6104,7 +6105,7 @@ def web_herramienta():
     <script>
     function showTab(t){{document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));document.getElementById(t).classList.add('active');event.target.classList.add('active');}}
     </script></head><body>
-    <header><div><h1>🔧 Herramienta</h1><p>Instapalma</p></div></header>
+    <header><div><h1>🔧 Herramienta</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div class='container'>
     <div class='tabs'>
       <button class='tab active' onclick='showTab("almacen")'>📦 Almacén ({len(items)})</button>
@@ -6141,7 +6142,6 @@ def web_herramienta():
       <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/obra' class='btn-add' style='background:#5c3a1a;margin-left:8px'>🏗️ PDF obra</a>
     </div>
     </div>
-<div style='padding:8px 30px 20px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
 
 
@@ -6180,7 +6180,7 @@ def web_herramienta_form(mid=None):
     <style>{CSS_BASE} label{{display:block;margin:12px 0 4px;font-size:13px;font-weight:600;color:#555}}
     input,select,textarea{{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box}}
     .btn{{background:#1a3a5c;color:white;padding:12px 28px;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-top:16px}}</style></head><body>
-    <header><div><h1>🔧 {titulo}</h1><p>Instapalma</p></div></header>
+    <header><div><h1>🔧 {titulo}</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div style='max-width:500px;margin:30px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.1)'>
     <form method='POST'>
     <label>Nombre</label><input name='nombre' value='{datos["nombre"]}' required>
@@ -6236,7 +6236,6 @@ def web_alta_obra():
     <label>Responsable</label><input name='responsable' placeholder='Nombre del operario (opcional)'>
     <button class='btn' type='submit'>Asignar a obra</button>
     </form></div>
-<div style='padding:8px 30px 20px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
 
 @app.route('/herramienta/editar_obra/<int:oid>', methods=['GET','POST'])
@@ -6265,7 +6264,7 @@ def web_editar_obra(oid):
     <style>{CSS_BASE} form{{max-width:420px;margin:32px auto;background:white;padding:28px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,.1)}}
     label{{display:block;font-weight:600;margin-top:14px;font-size:13px}} input{{width:100%;padding:9px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box;margin-top:4px}}
     .btn{{background:#1a3a5c;color:white;padding:11px 28px;border:none;border-radius:8px;font-weight:700;cursor:pointer;margin-top:20px;font-size:15px;width:100%}}</style></head><body>
-    <header><div><h1>✏️ Editar en obra</h1><p>Instapalma</p></div></header>
+    <header><div><h1>✏️ Editar en obra</h1><p>Instapalma</p></div><a href='/' class='btn-home'>🏠 Dashboard</a></header>
     <div class='container'><form method='POST'>
     <p style='font-weight:700;font-size:16px'>{nombre}</p>
     <label>Obra / Ubicación<input name='obra' value='{obra}' required></label>
@@ -6335,7 +6334,7 @@ def web_devolucion():
         'function toggleAll(cb){document.querySelectorAll("input[name=oids]").forEach(c=>c.checked=cb.checked)}'
         '</script>'
         '</head><body>'
-        '<header><div><h1>Devolucion a Almacen</h1><p>Instapalma</p></div></header>'
+        '<header><div><h1>Devolucion a Almacen</h1><p>Instapalma</p></div><a href="/" class="btn-home">🏠 Dashboard</a></header>'
         '<div class="container">'
         '<a href="/herramienta" class="btn-back">&#8592; Herramienta</a>'
         '<p style="color:#555;font-size:13px;margin:0 0 14px">Marca las herramientas que se devuelven al almacen y pulsa Confirmar.</p>'
@@ -6352,7 +6351,7 @@ def web_devolucion():
         '<button type="submit" class="btn" onclick="return confirm(\'Devolver las herramientas seleccionadas al almacen?\')">&#128257; Confirmar devolucion</button>'
         '</div>'
         '</form>'
-        '<div style="padding:8px 30px 20px"><a href="/" class="back">🏠 Dashboard</a></div>'
+        ''
         '</div></body></html>')
 
 @app.route('/herramienta/baja_obra/<int:oid>')
@@ -6405,13 +6404,13 @@ def web_revisiones():
     css = CSS_BASE
     return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Revisiones - Instapalma</title><style>' + css +
         'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1a3a5c;color:white;padding:8px;text-align:left}td{padding:7px 8px;border-bottom:1px solid #eee}tr:hover td{background:#f5f7ff}.tag{padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}.tag-ok{background:#d4f0d4;color:#1a5c1a}.tag-inc{background:#fde8d8;color:#8b2500}.btn{background:#1a3a5c;color:white;padding:9px 20px;border-radius:8px;border:none;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:14px}.btn-back{background:#eee;color:#333;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:14px}' +
-        '</style></head><body><header><div><h1>Revisiones de Herramienta</h1><p>Instapalma</p></div></header><div class="container">' +
+        '</style></head><body><header><div><h1>Revisiones de Herramienta</h1><p>Instapalma</p></div><a href="/" class="btn-home">🏠 Dashboard</a></header><div class="container">' +
         '<a href="/herramienta" class="btn-back">&#8592; Herramienta</a>' +
         '<a href="/herramienta/revisiones/nueva" class="btn" style="margin-left:10px">+ Nueva revision</a>' +
         '<table><tr><th>Fecha</th><th>Trabajador</th><th>Resultado</th><th>Observaciones</th><th></th></tr>' +
         (filas if filas else empty) +
         '</table></div>'
-        '<div style="padding:8px 30px 20px"><a href="/" class="back">🏠 Dashboard</a></div>'
+        ''
         '</body></html>')
 
 @app.route('/herramienta/revisiones/nueva', methods=['GET','POST'])
@@ -6443,7 +6442,7 @@ def web_revision_form(rid=None):
     css = CSS_BASE
     return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + titulo + ' - Instapalma</title><style>' + css +
         '.form-group{margin-bottom:16px}label{display:block;font-weight:600;margin-bottom:4px;font-size:13px}input,select,textarea{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box}textarea{height:100px;resize:vertical}.btn{background:#1a3a5c;color:white;padding:10px 28px;border-radius:8px;border:none;font-weight:700;cursor:pointer;font-size:15px}.btn-back{background:#eee;color:#333;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:10px}' +
-        '</style></head><body><header><div><h1>' + titulo + '</h1><p>Instapalma</p></div></header><div class="container"><form method="POST">' +
+        '</style></head><body><header><div><h1>' + titulo + '</h1><p>Instapalma</p></div><a href="/" class="btn-home">🏠 Dashboard</a></header><div class="container"><form method="POST">' +
         '<div class="form-group"><label>Fecha</label><input type="date" name="fecha" value="' + datos['fecha'] + '" required></div>' +
         '<div class="form-group"><label>Trabajador</label><input type="text" name="trabajador" value="' + datos['trabajador'] + '" placeholder="Nombre del trabajador" required></div>' +
         '<div class="form-group"><label>Resultado</label><select name="resultado"><option value="ok" ' + sel_ok + '>OK - Todo correcto</option><option value="incidencia" ' + sel_inc + '>Incidencia</option></select></div>' +
@@ -6451,7 +6450,7 @@ def web_revision_form(rid=None):
         '<a href="/herramienta/revisiones" class="btn-back">Cancelar</a>' +
         '<button type="submit" class="btn">Guardar</button>' +
         '</form></div>'
-        '<div style="padding:8px 30px 20px"><a href="/" class="back">🏠 Dashboard</a></div>'
+        ''
         '</body></html>')
 
 @app.route('/herramienta/revisiones/borrar/<int:rid>')
@@ -6535,7 +6534,6 @@ tr:hover td{{background:#f5f7ff}}
     {filas if filas else "<tr><td colspan='5' style='text-align:center;color:#999;padding:20px'>Sin registros</td></tr>"}
   </table>
 </div>
-<div style='padding:8px 30px 20px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>'''
 
 @app.route('/herramienta/pdf/<modo>')
