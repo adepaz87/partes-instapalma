@@ -3506,6 +3506,7 @@ def listar_partes():
   <div class="stat"><div class="num">{n_pdf}</div><div class="lbl">PDFs descargados</div></div>
 </div>
 <div class="wrap">{tabla}</div>
+<div style='padding:0 30px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
@@ -3553,6 +3554,7 @@ def ver_parte(parte_id):
     <a class="btn-pdf" href="/partes/{parte_id}/pdf">⬇ Descargar PDF</a>
   </div>
 </div>
+<div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
@@ -4209,7 +4211,7 @@ def panel_vehiculos():
     <th>Km inicio</th><th>Km fin</th><th>Operario</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{''.join([filas]) if rows else "<tr><td colspan=9 class='empty'>Sin registros</td></tr>"}</tbody>
     </table></div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
     </body></html>"""
     from flask import Response
     return Response(html, mimetype='text/html')
@@ -4380,7 +4382,7 @@ def panel_vacaciones():
     <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th><th></th></tr></thead>
     <tbody>{filas_vac}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -4443,7 +4445,7 @@ def editar_saldo(op=None):
     <button class='btn' type='submit'>Guardar</button>
     </form>
     </div>
-    <div style='padding:0 30px'><a href='/vacaciones' class='back'>← Volver</a></div>
+    <div style='padding:0 30px'><a href='/vacaciones' class='back'>← Vacaciones</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -5710,7 +5712,7 @@ def panel_almacen():
 
     <div style='margin-top:16px'><a href='/almacen/albaranes' style='color:#1a3a5c;font-weight:700'>📋 Ver albaranes →</a></div>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes de Trabajo</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -5763,7 +5765,7 @@ def editar_material(mid=None):
     <label>Precio unitario (€)</label><input name='precio_unitario' type='number' step='0.0001' value='{datos["precio_unitario"]}'>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
-    <div style='padding:0 30px'><a href='/almacen' class='back'>← Volver</a></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -5841,7 +5843,7 @@ def panel_albaranes():
     <table><thead><tr><th>Nº Albarán</th><th>Operario</th><th>Obra</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{filas}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
     </body></html>"""
 
 
@@ -6123,7 +6125,9 @@ def web_herramienta():
       <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/almacen' class='btn-add' style='background:#1a3a5c;margin-left:8px'>📦 PDF almacén</a>
       <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/obra' class='btn-add' style='background:#5c3a1a;margin-left:8px'>🏗️ PDF obra</a>
     </div>
-    </div></body></html>"""
+    </div>
+<div style='padding:0 30px'><a href='/' class='back'>🏠 Dashboard</a></div>
+</body></html>"""
 
 
 @app.route('/herramienta/nuevo', methods=['GET','POST'])
@@ -6175,7 +6179,7 @@ def web_herramienta_form(mid=None):
     <label>Observaciones</label><textarea name='observaciones' rows='3'>{datos["observaciones"]}</textarea>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
-    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Volver</a></div></body></html>"""
+    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Herramienta</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div></body></html>"""
 
 
 @app.route('/herramienta/alta_obra', methods=['GET','POST'])
@@ -6509,6 +6513,7 @@ tr:hover td{{background:#f5f7ff}}
     {filas if filas else "<tr><td colspan='5' style='text-align:center;color:#999;padding:20px'>Sin registros</td></tr>"}
   </table>
 </div>
+<div style='padding:0 30px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>'''
 
 @app.route('/herramienta/pdf/<modo>')
