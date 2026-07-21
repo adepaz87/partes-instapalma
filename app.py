@@ -3379,8 +3379,8 @@ CSS_BASE = """
   .badge-ok { background:#2e7d32; color:white; padding:3px 10px; border-radius:10px; font-size:11px; white-space:nowrap; }
   .badge-curso { background:#e65100; color:white; padding:3px 10px; border-radius:10px; font-size:11px; white-space:nowrap; }
   .empty { text-align: center; padding: 60px; color: #aaa; font-size: 15px; }
-  .back { display:inline-block; margin:20px 30px 0; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px; }
-  .back:hover { text-decoration:underline; }
+  .back { display:inline-block; margin:20px 30px 0; background:#3D35E8; color:white; text-decoration:none; font-weight:600; font-size:13px; padding:8px 18px; border-radius:8px; }
+  .back:hover { opacity:0.85; text-decoration:none; }
   .ficha { max-width: 800px; margin: 24px auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.1); overflow: hidden; }
   .ficha-header { background: #1a3a5c; color: white; padding: 20px 28px; }
   .ficha-header h2 { font-size: 20px; }
@@ -3506,7 +3506,6 @@ def listar_partes():
   <div class="stat"><div class="num">{n_pdf}</div><div class="lbl">PDFs descargados</div></div>
 </div>
 <div class="wrap">{tabla}</div>
-<div style='padding:0 30px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
@@ -3554,7 +3553,6 @@ def ver_parte(parte_id):
     <a class="btn-pdf" href="/partes/{parte_id}/pdf">⬇ Descargar PDF</a>
   </div>
 </div>
-<div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>"""
     return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
@@ -4211,7 +4209,7 @@ def panel_vehiculos():
     <th>Km inicio</th><th>Km fin</th><th>Operario</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{''.join([filas]) if rows else "<tr><td colspan=9 class='empty'>Sin registros</td></tr>"}</tbody>
     </table></div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
     </body></html>"""
     from flask import Response
     return Response(html, mimetype='text/html')
@@ -4303,8 +4301,8 @@ def panel_mantenimientos():
         "tr:last-child td { border-bottom:none }"
         "tr.clickable:hover td { background:#eef3fa; cursor:pointer }"
         ".empty { text-align:center; padding:60px; color:#aaa; font-size:15px }"
-        ".back { display:inline-block; margin:20px 30px 10px; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px }"
-        ".back:hover { text-decoration:underline }"
+        ".back { display:inline-block; margin:20px 30px 10px; background:#3D35E8; color:white; text-decoration:none; font-weight:600; font-size:13px; padding:8px 18px; border-radius:8px }"
+        ".back:hover { opacity:0.85; text-decoration:none }"
         "</style></head><body>"
         "<header><div><h1>Mantenimientos Realizados</h1><p>Instapalma - Historial por vehiculo</p></div></header>"
         "<div class='wrap'><table>"
@@ -4382,7 +4380,7 @@ def panel_vacaciones():
     <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th><th></th></tr></thead>
     <tbody>{filas_vac}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
     </body></html>"""
 
 
@@ -4445,7 +4443,7 @@ def editar_saldo(op=None):
     <button class='btn' type='submit'>Guardar</button>
     </form>
     </div>
-    <div style='padding:0 30px'><a href='/vacaciones' class='back'>← Vacaciones</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/vacaciones' class='back'>← Volver</a></div>
     </body></html>"""
 
 
@@ -5712,7 +5710,7 @@ def panel_almacen():
 
     <div style='margin-top:16px'><a href='/almacen/albaranes' style='color:#1a3a5c;font-weight:700'>📋 Ver albaranes →</a></div>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes de Trabajo</a></div>
     </body></html>"""
 
 
@@ -5765,7 +5763,7 @@ def editar_material(mid=None):
     <label>Precio unitario (€)</label><input name='precio_unitario' type='number' step='0.0001' value='{datos["precio_unitario"]}'>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
-    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Volver</a></div>
     </body></html>"""
 
 
@@ -5843,7 +5841,7 @@ def panel_albaranes():
     <table><thead><tr><th>Nº Albarán</th><th>Operario</th><th>Obra</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{filas}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a></div>
     </body></html>"""
 
 
@@ -6001,7 +5999,7 @@ def panel_mantenimientos_ge():
       tr:last-child td {{ border-bottom:none }}
       tr.clickable:hover td {{ background:#eef3fa; cursor:pointer }}
       .empty {{ text-align:center; padding:60px; color:#aaa; font-size:15px }}
-      .back {{ display:inline-block; margin:20px 30px; color:#1a3a5c; text-decoration:none; font-weight:600; font-size:14px }}
+      .back { display:inline-block; margin:20px 30px; background:#3D35E8; color:white; text-decoration:none; font-weight:600; font-size:13px; padding:8px 18px; border-radius:8px }
     </style></head><body>
     <header>
       <div><h1>⚡ Mantenimientos Grupos Electrógenos</h1><p>TBSA — Instapalma</p></div>
@@ -6125,9 +6123,7 @@ def web_herramienta():
       <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/almacen' class='btn-add' style='background:#1a3a5c;margin-left:8px'>📦 PDF almacén</a>
       <a href='https://bot-production-66b8.up.railway.app/herramienta/pdf/obra' class='btn-add' style='background:#5c3a1a;margin-left:8px'>🏗️ PDF obra</a>
     </div>
-    </div>
-<div style='padding:0 30px'><a href='/' class='back'>🏠 Dashboard</a></div>
-</body></html>"""
+    </div></body></html>"""
 
 
 @app.route('/herramienta/nuevo', methods=['GET','POST'])
@@ -6179,7 +6175,7 @@ def web_herramienta_form(mid=None):
     <label>Observaciones</label><textarea name='observaciones' rows='3'>{datos["observaciones"]}</textarea>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
-    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Herramienta</a> &nbsp; <a href='/' class='back'>🏠 Dashboard</a></div></body></html>"""
+    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Volver</a></div></body></html>"""
 
 
 @app.route('/herramienta/alta_obra', methods=['GET','POST'])
@@ -6311,7 +6307,7 @@ def web_devolucion():
         'tr:hover td{background:#f5f7ff}'
         'input[type=checkbox]{accent-color:#1a3a5c}'
         '.btn{background:#c0392b;color:white;padding:11px 28px;border-radius:8px;border:none;font-weight:700;cursor:pointer;font-size:15px}'
-        '.btn-back{background:#eee;color:#333;padding:10px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:12px}'
+        '.btn-back{background:#3D35E8;color:white;padding:10px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:12px}'
         '.sel-all{font-size:12px;color:#1a3a5c;cursor:pointer;text-decoration:underline;margin-left:12px}'
         '</style>'
         '<script>'
@@ -6386,7 +6382,7 @@ def web_revisiones():
     empty = '<tr><td colspan="5" style="text-align:center;color:#999">Sin revisiones registradas</td></tr>'
     css = CSS_BASE
     return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Revisiones - Instapalma</title><style>' + css +
-        'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1a3a5c;color:white;padding:8px;text-align:left}td{padding:7px 8px;border-bottom:1px solid #eee}tr:hover td{background:#f5f7ff}.tag{padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}.tag-ok{background:#d4f0d4;color:#1a5c1a}.tag-inc{background:#fde8d8;color:#8b2500}.btn{background:#1a3a5c;color:white;padding:9px 20px;border-radius:8px;border:none;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:14px}.btn-back{background:#eee;color:#333;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:14px}' +
+        'table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1a3a5c;color:white;padding:8px;text-align:left}td{padding:7px 8px;border-bottom:1px solid #eee}tr:hover td{background:#f5f7ff}.tag{padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}.tag-ok{background:#d4f0d4;color:#1a5c1a}.tag-inc{background:#fde8d8;color:#8b2500}.btn{background:#1a3a5c;color:white;padding:9px 20px;border-radius:8px;border:none;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block;margin-bottom:14px}.btn-back{background:#3D35E8;color:white;padding:8px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:14px}' +
         '</style></head><body><header><div><h1>Revisiones de Herramienta</h1><p>Instapalma</p></div></header><div class="container">' +
         '<a href="/herramienta" class="btn-back">&#8592; Herramienta</a>' +
         '<a href="/herramienta/revisiones/nueva" class="btn" style="margin-left:10px">+ Nueva revision</a>' +
@@ -6422,7 +6418,7 @@ def web_revision_form(rid=None):
     sel_inc = 'selected' if datos['resultado']=='incidencia' else ''
     css = CSS_BASE
     return ('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + titulo + ' - Instapalma</title><style>' + css +
-        '.form-group{margin-bottom:16px}label{display:block;font-weight:600;margin-bottom:4px;font-size:13px}input,select,textarea{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box}textarea{height:100px;resize:vertical}.btn{background:#1a3a5c;color:white;padding:10px 28px;border-radius:8px;border:none;font-weight:700;cursor:pointer;font-size:15px}.btn-back{background:#eee;color:#333;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:10px}' +
+        '.form-group{margin-bottom:16px}label{display:block;font-weight:600;margin-bottom:4px;font-size:13px}input,select,textarea{width:100%;padding:9px 12px;border:1px solid #ccc;border-radius:8px;font-size:14px;box-sizing:border-box}textarea{height:100px;resize:vertical}.btn{background:#1a3a5c;color:white;padding:10px 28px;border-radius:8px;border:none;font-weight:700;cursor:pointer;font-size:15px}.btn-back{background:#3D35E8;color:white;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-right:10px}' +
         '</style></head><body><header><div><h1>' + titulo + '</h1><p>Instapalma</p></div></header><div class="container"><form method="POST">' +
         '<div class="form-group"><label>Fecha</label><input type="date" name="fecha" value="' + datos['fecha'] + '" required></div>' +
         '<div class="form-group"><label>Trabajador</label><input type="text" name="trabajador" value="' + datos['trabajador'] + '" placeholder="Nombre del trabajador" required></div>' +
@@ -6496,7 +6492,7 @@ table{{width:100%;border-collapse:collapse;font-size:13px}}
 th{{background:#1a3a5c;color:white;padding:10px 8px;text-align:left}}
 td{{padding:9px 8px;border-bottom:1px solid #eee}}
 tr:hover td{{background:#f5f7ff}}
-.btn-back{{background:#eee;color:#333;padding:9px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:16px}}
+.btn-back{{background:#3D35E8;color:white;padding:9px 16px;border-radius:8px;text-decoration:none;font-size:13px;display:inline-block;margin-bottom:16px}}
 </style></head>
 <body>
 <div class="card">
@@ -6513,7 +6509,6 @@ tr:hover td{{background:#f5f7ff}}
     {filas if filas else "<tr><td colspan='5' style='text-align:center;color:#999;padding:20px'>Sin registros</td></tr>"}
   </table>
 </div>
-<div style='padding:0 30px'><a href='/' class='back'>🏠 Dashboard</a></div>
 </body></html>'''
 
 @app.route('/herramienta/pdf/<modo>')
