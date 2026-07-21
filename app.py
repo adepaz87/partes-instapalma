@@ -4187,6 +4187,15 @@ def dashboard():
   </div>
 
 
+
+  <div class="card card-full">
+    <div class="card-head"><h2>🛠️ OT TBSA</h2><a href="https://site.zapia.com/mfhkvqzy" target="_blank">Abrir en nueva pestaña →</a></div>
+    <div style="padding:0">
+      <iframe src="https://site.zapia.com/mfhkvqzy"
+              width="100%" height="700" frameborder="0"
+              style="display:block"></iframe>
+    </div>
+  </div>
   <div class="card card-full">
     <div class="card-head"><h2>🦺 Informe PRL</h2><a href="https://drive.google.com/file/d/12U4pynCU_Ob7DxrNA5qKtpxxVFdtYDb5/view?usp=drivesdk" target="_blank">Abrir en Drive →</a></div>
     <div style="padding:0">
