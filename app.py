@@ -4316,6 +4316,18 @@ def panel_mantenimientos():
     from flask import Response
     return Response(html, mimetype='text/html')
 
+
+@app.route('/mantenimientos-ge/<int:mid>/borrar', methods=['POST'])
+def borrar_mantenimiento_ge(mid):
+    from flask import redirect
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM mantenimiento_ge WHERE id=%s", (mid,))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+    return redirect('/mantenimientos-ge')
+
 # ── Panel Vacaciones ──────────────────────────────────────────────────────────
 @app.route('/vacaciones')
 def panel_vacaciones():
@@ -4333,7 +4345,7 @@ def panel_vacaciones():
     for r in rows:
         vid, nombre, op, fi, ff, dias, fsol, estado, cat = r
         badge = {'aprobada':'badge-ok','rechazada':'badge-no','pendiente':'badge-pend'}.get(estado,'badge-pend')
-        filas_vac += f"<tr><td>{vid}</td><td>{nombre or op}</td><td>{fi}</td><td>{ff}</td><td>{dias or '-'}</td><td>{fsol}</td><td><span class='{badge}'>{estado.upper()}</span></td></tr>"
+        filas_vac += f"<tr><td>{vid}</td><td>{nombre or op}</td><td>{fi}</td><td>{ff}</td><td>{dias or '-'}</td><td>{fsol}</td><td><span class='{badge}'>{estado.upper()}</span></td><td><form method='POST' action='/vacaciones/{vid}/borrar' onsubmit=\"return confirm('¿Borrar?')\" style='margin:0'><button type='submit' style='background:#c62828;color:white;border:none;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:11px'>🗑️</button></form></td></tr>"
     if not filas_vac:
         filas_vac = "<tr><td colspan=7 class='empty'>Sin solicitudes</td></tr>"
 
@@ -4360,11 +4372,23 @@ def panel_vacaciones():
     <table><thead><tr><th>Operario</th><th>Total días</th><th>Usados</th><th>Restantes</th><th></th></tr></thead>
     <tbody>{filas_saldo}</tbody></table>
     <h3 style='color:#1a3a5c;margin:24px 0 12px'>Solicitudes</h3>
-    <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th></tr></thead>
+    <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th><th></th></tr></thead>
     <tbody>{filas_vac}</tbody></table>
     </div>
     <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
     </body></html>"""
+
+
+@app.route('/vacaciones/<int:vid>/borrar', methods=['POST'])
+def borrar_vacacion(vid):
+    from flask import redirect
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM vacaciones WHERE id=%s", (vid,))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        return f"Error: {e}", 500
+    return redirect('/vacaciones')
 
 @app.route('/vacaciones/saldo/nuevo', methods=['GET','POST'])
 @app.route('/vacaciones/saldo/<path:op>/editar', methods=['GET','POST'])
@@ -5941,6 +5965,7 @@ def panel_mantenimientos_ge():
             <td style="background:{estado_color};text-align:center;font-weight:600;color:{badge_color}">{estado_txt}</td>
             <td>{op or '—'}</td>
             <td><a href='/mantto_ge/{mid}/pdf' onclick='event.stopPropagation()' style='color:#1a3a5c;font-weight:600'>📄 PDF</a></td>
+            <td onclick='event.stopPropagation()'><form method='POST' action='/mantenimientos-ge/{mid}/borrar' onsubmit=\"return confirm('¿Borrar este mantenimiento?')\" style='margin:0'><button type='submit' style='background:#c62828;color:white;border:none;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:11px'>🗑️</button></form></td>
         </tr>"""
 
     sin_reg = "<tr><td colspan=8 class='empty'>Sin mantenimientos registrados</td></tr>"
@@ -5985,7 +6010,7 @@ def panel_mantenimientos_ge():
     <div class='wrap'><table>
     <thead><tr>
       <th>Fecha</th><th>Ubicación</th><th>Marca / Modelo</th><th>Horas</th>
-      <th>Checks</th><th>Estado</th><th>Técnico</th><th>PDF</th>
+      <th>Checks</th><th>Estado</th><th>Técnico</th><th>PDF</th><th></th>
     </tr></thead>
     <tbody>{filas if rows else sin_reg}</tbody>
     </table></div>
