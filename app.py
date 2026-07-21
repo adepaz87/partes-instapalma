@@ -285,15 +285,21 @@ MENU_PRINCIPAL = (
     "👋 *Hola! Soy el bot de Instapalma*\n\n"
     "¿Qué quieres hacer?\n\n"
     "1️⃣ Partes de trabajo\n"
-    "2️⃣ Salida de almacén\n"
-    "3️⃣ Devolución almacén\n"
-    "4️⃣ Consulta\n"
-    "5️⃣ Herramienta\n"
-    "6️⃣ Vacaciones\n"
-    "7️⃣ Resumen fin de mes\n"
-    "8️⃣ Vehículos\n"
-    "9️⃣ Mantenimiento GE (TBSA)\n\n"
+    "2️⃣ Gestión de Almacén\n"
+    "3️⃣ Herramienta\n"
+    "4️⃣ Vacaciones\n"
+    "5️⃣ Resumen fin de mes\n"
+    "6️⃣ Vehículos\n"
+    "7️⃣ Mantenimiento GE (TBSA)\n\n"
     "_Escribe el número o la palabra clave directamente_"
+)
+
+MENU_ALMACEN = (
+    "📦 *Gestión de Almacén*\n\n"
+    "2️⃣1️⃣ Salida de almacén\n"
+    "2️⃣2️⃣ Devolución almacén\n"
+    "2️⃣3️⃣ Consulta\n\n"
+    "_Escribe el número de la opción_"
 )
 
 def normalizar(texto):
@@ -2172,28 +2178,12 @@ def webhook():
             iniciar_parte(numero)
             msg.body("👷 *Bot de Partes de Trabajo — Instapalma*\n\nVamos a crear tu parte paso a paso.\n\n1️⃣ ¿Cuál es la *fecha* del parte?\n\n_Escribe en formato DD/MM/YYYY o escribe *hoy* para usar la fecha de hoy ({})_".format(datetime.now().strftime('%d/%m/%Y')))
         elif op == '2':
-            num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
-            nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
-            if nombre_conocido2:
-                set_dato(numero, 'nombre_operario', nombre_conocido2)
-            set_dato(numero, 'stock_lineas', [])
-            set_paso(numero, 'stock_salida_obra')
-            msg.body("📤 *SALIDA DE ALMACÉN*\n\n¿Para qué *obra o cliente* es esta salida?\n_Ejemplo: Ayuntamiento Los Llanos — Calle Real_")
+            set_paso(numero, 'almacen_menu')
+            msg.body(MENU_ALMACEN)
         elif op == '3':
-            num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
-            nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
-            if nombre_conocido2:
-                set_dato(numero, 'nombre_operario', nombre_conocido2)
-            set_dato(numero, 'stock_lineas', [])
-            set_paso(numero, 'stock_devol_obra')
-            msg.body("📥 *DEVOLUCIÓN A ALMACÉN*\n\n¿De qué obra procede el material?\n_Escribe el nombre de la obra_")
-        elif op == '4':
-            set_paso(numero, 'consulta_menu')
-            msg.body("🔍 *CONSULTA*\n\n1️⃣ Material de almacén\n2️⃣ Stock de herramienta")
-        elif op == '5':
             set_paso(numero, 'herr_menu')
             msg.body(MENU_HERRAMIENTA)
-        elif op == '6':
+        elif op == '4':
             iniciar_vacaciones(numero)
             num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
@@ -2203,7 +2193,7 @@ def webhook():
             else:
                 set_paso(numero, 'vac_nombre')
             msg.body("🏖️ *Solicitud de Vacaciones*\n\n¿Cuál es tu nombre completo?" if not nombre_conocido2 else f"🏖️ *Solicitud de Vacaciones*\n\nHola {nombre_conocido2}! ¿Desde qué fecha?\n_Ejemplo: 01/08/2026_")
-        elif op == '7':
+        elif op == '5':
             num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
             if nombre_conocido2:
@@ -2212,10 +2202,10 @@ def webhook():
             else:
                 set_paso(numero, 'resumen_nombre')
             msg.body("📊 *RESUMEN FIN DE MES*\n\n¿De qué mes es el resumen?\n_Ejemplo: Junio 2026_" if nombre_conocido2 else "📊 *RESUMEN FIN DE MES*\n\n¿Cuál es tu nombre completo?")
-        elif op == '8':
+        elif op == '6':
             set_paso(numero, 'vehiculo_menu')
             msg.body("🚗 *Vehículos*\n\nEscribe *vehiculo* para acceder al módulo de mantenimiento.")
-        elif op == '9':
+        elif op == '7':
             num_limpio_ge = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_ge = OPERARIOS.get(num_limpio_ge, '')
             if nombre_ge:
@@ -2226,6 +2216,32 @@ def webhook():
             msg.body(f"🔧 *Mantenimiento GE — TBSA*\n\nFecha: {datetime.now().strftime('%d/%m/%Y')}\n\n1️⃣ ¿Cuál es la *ubicación*?\n\n{opciones}")
         else:
             msg.body(MENU_PRINCIPAL)
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Submenú Almacén ───────────────────────────────────────────────────────
+    if estado and estado.get('paso') == 'almacen_menu':
+        op = msg_n_herr.strip()
+        borrar_estado(numero)
+        num_limpio2 = numero.replace('whatsapp:','').replace('+','').strip()
+        nombre_conocido2 = OPERARIOS.get(num_limpio2, '')
+        if op == '21':
+            if nombre_conocido2:
+                set_dato(numero, 'nombre_operario', nombre_conocido2)
+            set_dato(numero, 'stock_lineas', [])
+            set_paso(numero, 'stock_salida_obra')
+            msg.body("📤 *SALIDA DE ALMACÉN*\n\n¿Para qué *obra o cliente* es esta salida?\n_Ejemplo: Ayuntamiento Los Llanos — Calle Real_")
+        elif op == '22':
+            if nombre_conocido2:
+                set_dato(numero, 'nombre_operario', nombre_conocido2)
+            set_dato(numero, 'stock_lineas', [])
+            set_paso(numero, 'stock_devol_obra')
+            msg.body("📥 *DEVOLUCIÓN A ALMACÉN*\n\n¿De qué obra procede el material?\n_Escribe el nombre de la obra_")
+        elif op == '23':
+            set_paso(numero, 'consulta_menu')
+            msg.body("🔍 *CONSULTA*\n\n1️⃣ Material de almacén\n2️⃣ Stock de herramienta")
+        else:
+            set_paso(numero, 'almacen_menu')
+            msg.body(MENU_ALMACEN)
         return str(resp) if not use_meta else ('OK', 200)
 
     if not estado:
@@ -4204,7 +4220,7 @@ def panel_vehiculos():
     <th>Km inicio</th><th>Km fin</th><th>Operario</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{''.join([filas]) if rows else "<tr><td colspan=9 class='empty'>Sin registros</td></tr>"}</tbody>
     </table></div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
     </body></html>"""
     from flask import Response
     return Response(html, mimetype='text/html')
@@ -4375,7 +4391,7 @@ def panel_vacaciones():
     <table><thead><tr><th>#</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Días</th><th>Solicitado</th><th>Estado</th><th></th></tr></thead>
     <tbody>{filas_vac}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
     </body></html>"""
 
 
@@ -4690,7 +4706,7 @@ def panel_resumenes():
     <th>#</th><th>Operario</th><th>Mes</th><th>H. Extra</th><th>Días Vac.</th><th>Gastos</th><th>Foto</th><th>Fecha</th><th>PDF</th>
     </tr></thead><tbody>{filas}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Ver Partes de Trabajo</a></div>
     </body></html>"""
 
 
@@ -5705,7 +5721,7 @@ def panel_almacen():
 
     <div style='margin-top:16px'><a href='/almacen/albaranes' style='color:#1a3a5c;font-weight:700'>📋 Ver albaranes →</a></div>
     </div>
-    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/partes' class='back'>← Partes de Trabajo</a></div>
     </body></html>"""
 
 
@@ -5836,7 +5852,7 @@ def panel_albaranes():
     <table><thead><tr><th>Nº Albarán</th><th>Operario</th><th>Obra</th><th>Fecha</th><th>PDF</th></tr></thead>
     <tbody>{filas}</tbody></table>
     </div>
-    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div>
+    <div style='padding:0 30px'><a href='/almacen' class='back'>← Almacén</a></div>
     </body></html>"""
 
 
@@ -6170,7 +6186,7 @@ def web_herramienta_form(mid=None):
     <label>Observaciones</label><textarea name='observaciones' rows='3'>{datos["observaciones"]}</textarea>
     <button class='btn' type='submit'>Guardar</button>
     </form></div>
-    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Herramienta</a> &nbsp; <a href="/" class='back'>🏠 Dashboard</a></div></body></html>"""
+    <div style='padding:0 30px'><a href='/herramienta' class='back'>← Volver</a></div></body></html>"""
 
 
 @app.route('/herramienta/alta_obra', methods=['GET','POST'])
