@@ -4027,13 +4027,13 @@ def dashboard():
     try:
         conn = get_db(); cur = conn.cursor()
         # Partes
-        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%'")
+        cur.execute("SELECT COUNT(*) FROM partes")
         total_partes = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND pdf_bytes IS NOT NULL")
+        cur.execute("SELECT COUNT(*) FROM partes WHERE terminado IN ('SÍ','SI','S','YES','TERMINADO','TRUE','1')")
         partes_terminados = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM stock_albaranes WHERE numero LIKE 'ALB-%' AND DATE(created_at) = CURRENT_DATE")
+        cur.execute("SELECT COUNT(*) FROM partes WHERE DATE(created_at) = CURRENT_DATE")
         partes_hoy = cur.fetchone()[0]
-        cur.execute("SELECT numero, nombre_operario, obra, pdf_bytes IS NOT NULL, created_at FROM stock_albaranes WHERE numero LIKE 'ALB-%' ORDER BY created_at DESC LIMIT 8")
+        cur.execute("SELECT numero_parte, operario, obra, terminado, created_at FROM partes ORDER BY created_at DESC LIMIT 8")
         ultimos_partes = cur.fetchall()
         # Stock almacén
         cur.execute("SELECT COUNT(*) FROM stock_materiales")
@@ -4052,9 +4052,9 @@ def dashboard():
         # Vacaciones
         cur.execute("SELECT COUNT(*) FROM vacaciones WHERE estado='pendiente'")
         vac_pendientes = (cur.fetchone() or [0])[0]
-        # Movimientos almacén
-        cur.execute("SELECT tipo, material_nombre, cantidad, unidad, nombre_operario, obra, created_at FROM stock_movimientos ORDER BY created_at DESC LIMIT 6")
-        movimientos = cur.fetchall()
+        # Vacaciones próximas
+        cur.execute("SELECT nombre_operario, fecha_inicio, fecha_fin, dias_solicitados, estado FROM vacaciones ORDER BY created_at DESC LIMIT 6")
+        ultimas_vacaciones = cur.fetchall()
         cur.close(); conn.close()
     except Exception as e:
         return f"<h1>Error: {e}</h1>", 500
@@ -4062,10 +4062,10 @@ def dashboard():
     filas_partes = ''
     for p in ultimos_partes:
         num, op, obra, term, cat = p
-        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:8px;font-size:11px">✓ PDF generado</span>' if term else '<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">🔄 Sin PDF</span>'
+        terminado = str(term or '').upper() in ('SÍ','SI','S','YES','TERMINADO','TRUE','1')
+        badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:8px;font-size:11px">✓ Terminado</span>' if terminado else '<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">🔄 En curso</span>'
         fecha = cat.strftime('%d/%m %H:%M') if cat else '—'
-        pdf_link = f'<a href="/albaran/{num}.pdf" target="_blank" style="color:#1a3a5c;font-weight:700;font-size:16px">📄</a>'
-        filas_partes += f'<tr><td><b>{num}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td>{badge}</td><td style="font-size:12px;color:#888">{fecha}</td><td style="text-align:center">{pdf_link}</td></tr>'
+        filas_partes += f'<tr><td><b>{num or "—"}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td>{badge}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
 
     filas_herr = ''
     for h in herr_en_obra:
@@ -4073,20 +4073,14 @@ def dashboard():
         fecha = falta.strftime('%d/%m/%Y') if falta else '—'
         filas_herr += f'<tr><td><b>{nombre}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
 
-    alertas_stock = ''
-    for m in mat_alerta:
-        nombre, stock, unidad, minimo = m
-        alertas_stock += f'<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f0f0f0"><span style="font-size:13px">{nombre}</span><span style="background:#fff3e0;border:1px solid #ffcc80;color:#e65100;padding:2px 10px;border-radius:8px;font-size:12px;white-space:nowrap">{str(stock).replace(".",",")} / {str(minimo).replace(".",",")} {unidad}</span></div>'
-    if not alertas_stock:
-        alertas_stock = '<p style="color:#2e7d32;text-align:center;padding:20px;font-size:13px">✅ Todo el stock sobre mínimos</p>'
 
-    filas_mov = ''
-    for mv in movimientos:
-        tipo, mat, cant, unidad, op, obra, cat = mv
-        color = '#e8f5e9' if tipo == 'entrada' else '#fff3e0'
-        icono = '📥' if tipo == 'entrada' else '📤'
-        fecha = cat.strftime('%d/%m %H:%M') if cat else '—'
-        filas_mov += f'<tr style="background:{color}"><td>{icono} {tipo.capitalize()}</td><td><b>{mat}</b></td><td style="text-align:center">{str(cant).replace(".",",")} {unidad}</td><td style="font-size:12px;color:#666">{op or "—"}</td><td style="font-size:12px;color:#666">{obra or "—"}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
+
+    filas_vacaciones = ''
+    for v in ultimas_vacaciones:
+        nombre, fi, ff, dias, estado = v
+        color_estado = {'pendiente': '#fff3e0', 'aprobada': '#e8f5e9', 'denegada': '#ffebee'}.get(estado or 'pendiente', '#f5f5f5')
+        badge_est = {'pendiente': '🕐 Pendiente', 'aprobada': '✅ Aprobada', 'denegada': '❌ Denegada'}.get(estado or 'pendiente', estado)
+        filas_vacaciones += f'<tr><td><b>{nombre or "—"}</b></td><td style="font-size:12px">{fi or "—"}</td><td style="font-size:12px">{ff or "—"}</td><td style="text-align:center">{dias or "—"}</td><td><span style="background:{color_estado};padding:2px 8px;border-radius:8px;font-size:11px">{badge_est}</span></td></tr>'
 
     warn_stock = 'warn' if mat_bajos > 0 else 'ok'
     warn_vac = 'warn' if vac_pendientes > 0 else ''
@@ -4154,7 +4148,7 @@ def dashboard():
   <div class="card">
     <div class="card-head"><h2>📋 Últimos partes</h2><a href="/partes">Ver todos →</a></div>
     <table>
-      <thead><tr><th>Nº</th><th>Operario</th><th>Obra</th><th>Estado</th><th>Fecha</th><th></th></tr></thead>
+      <thead><tr><th>Nº</th><th>Operario</th><th>Obra</th><th>Estado</th><th>Fecha</th></tr></thead>
       <tbody>{filas_partes or "<tr><td colspan='6' style='text-align:center;color:#aaa;padding:24px'>Sin partes</td></tr>"}</tbody>
     </table>
   </div>
@@ -4167,16 +4161,11 @@ def dashboard():
     </table>
   </div>
 
-  <div class="card">
-    <div class="card-head"><h2>⚠️ Alertas stock</h2><a href="/almacen">Ver almacén →</a></div>
-    <div class="alertas">{alertas_stock}</div>
-  </div>
-
   <div class="card card-full">
-    <div class="card-head"><h2>📦 Últimos movimientos almacén</h2><a href="/almacen">Ver almacén →</a></div>
+    <div class="card-head"><h2>🌴 Vacaciones</h2><a href="/vacaciones">Ver todas →</a></div>
     <table>
-      <thead><tr><th>Tipo</th><th>Material</th><th>Cantidad</th><th>Operario</th><th>Obra</th><th>Fecha</th></tr></thead>
-      <tbody>{filas_mov or "<tr><td colspan='6' style='text-align:center;color:#aaa;padding:24px'>Sin movimientos</td></tr>"}</tbody>
+      <thead><tr><th>Operario</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Estado</th></tr></thead>
+      <tbody>{filas_vacaciones or "<tr><td colspan='5' style='text-align:center;color:#aaa;padding:24px'>Sin solicitudes</td></tr>"}</tbody>
     </table>
   </div>
 
