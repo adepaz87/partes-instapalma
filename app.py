@@ -6234,6 +6234,11 @@ def web_alta_obra():
             cur.execute('UPDATE herramienta SET stock_almacen = stock_almacen - 1, updated_at=NOW() WHERE id=%s', (hid,))
             cur.execute('INSERT INTO herramienta_obra (herramienta_id, herramienta_nombre, nombre_operario, obra, activo) VALUES (%s,%s,%s,%s,true)', (hid, row[0], resp_, obra))
             conn.commit()
+            # Notificar al supervisor
+            try:
+                enviar_whatsapp(SUPERVISOR_WA, f"📤 *Alta herramienta en obra*\n🔧 {row[0]}\n🏗️ Obra: {obra}\n👷 Responsable: {resp_ or 'Sin especificar'}")
+            except Exception as _e:
+                print(f"Notif alta obra: {_e}")
         cur.close(); conn.close()
         return redirect('/herramienta')
     # GET — formulario
@@ -6315,7 +6320,12 @@ def web_devolucion():
                         cur.execute("DELETE FROM herramienta_obra WHERE id=%s", (oid_int,))
                 except Exception as e:
                     print(f"Error devolucion {oid}: {e}")
-            conn.commit(); cur.close(); conn.close()
+            conn.commit()
+            try:
+                enviar_whatsapp(SUPERVISOR_WA, f"📥 *Devolución herramienta al almacén*\n{len(oids)} unidad(es) devuelta(s)")
+            except Exception as _e:
+                print(f"Notif devolucion: {_e}")
+            cur.close(); conn.close()
         return redirect('/herramienta')
     # GET: mostrar lista de herramienta en obra
     conn = get_db(); cur = conn.cursor()
@@ -6384,9 +6394,16 @@ def web_baja_obra(oid):
         cur.execute("SELECT herramienta_id FROM herramienta_obra WHERE id=%s", (oid,))
         row = cur.fetchone()
         if row:
+            cur.execute("SELECT h.nombre, ho.nombre_operario, ho.obra FROM herramienta h JOIN herramienta_obra ho ON h.id=ho.herramienta_id WHERE ho.id=%s", (oid,))
+            info = cur.fetchone()
             cur.execute("UPDATE herramienta SET stock_almacen = stock_almacen + 1, updated_at=NOW() WHERE id=%s", (row[0],))
             cur.execute("DELETE FROM herramienta_obra WHERE id=%s", (oid,))
             conn.commit()
+            if info:
+                try:
+                    enviar_whatsapp(SUPERVISOR_WA, f"📥 *Baja herramienta (vuelta al almacén)*\n🔧 {info[0]}\n👷 Operario: {info[1] or 'Sin especificar'}\n🏗️ Obra: {info[2] or 'Sin especificar'}")
+                except Exception as _e:
+                    print(f"Notif baja obra: {_e}")
         cur.close(); conn.close()
     except Exception as e:
         print(f"Error baja_obra web: {e}")
