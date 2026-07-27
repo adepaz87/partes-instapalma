@@ -619,20 +619,36 @@ def generar_pdf(datos):
     elements.append(Paragraph("MATERIAL DE STOCK", sec_style))
     mat = datos.get('material_stock', 'Ninguno')
     if normalizar(mat) == 'ninguno' or not mat:
-        mat_rows = [['Material', 'Cantidad'], ['—', '—']]
+        mat_rows = [['Material / Concepto', 'Cantidad'], ['—', '—']]
     else:
-        mat_rows = [['Material', 'Cantidad']]
-        for linea in mat.split('\n'):
-            linea = linea.strip()
+        import re as _re
+        def _parse_linea_mat(linea):
+            linea = linea.strip().lstrip('•-–').strip()
             if not linea:
-                continue
-            if '—' in linea:
-                parts = linea.split('—', 1)
-            elif '-' in linea:
-                parts = linea.split('-', 1)
-            else:
-                parts = [linea, '']
-            mat_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
+                return None
+            for sep in ['—', ' - ', ' – ']:
+                if sep in linea:
+                    parts = linea.split(sep, 1)
+                    a, b = parts[0].strip(), parts[1].strip()
+                    if _re.match(r'^[\d,.]+\s*[a-zA-ZºáéíóúüÁÉÍÓÚÜ²³/]+', a) and len(b) > len(a):
+                        return (b, a)
+                    return (a, b)
+            m = _re.search(
+                r'^(.*?)\s+([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros)?\.?)\s*$',
+                linea, _re.IGNORECASE)
+            if m and m.group(2).strip():
+                return (m.group(1).strip(), m.group(2).strip())
+            m2 = _re.match(
+                r'^([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|bobinas|rollos|cajas|l|litros|sacos|barras|tubos|m²|m2|metros)\.?)\s+(?:de\s+)?(.*)',
+                linea, _re.IGNORECASE)
+            if m2:
+                return (m2.group(2).strip(), m2.group(1).strip())
+            return (linea, '')
+        mat_rows = [['Material / Concepto', 'Cantidad']]
+        for linea in mat.split('\n'):
+            parsed = _parse_linea_mat(linea)
+            if parsed:
+                mat_rows.append([parsed[0], parsed[1]])
     t_mat = Table(mat_rows, colWidths=[10*cm, 7*cm])
     t_mat.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), AZUL),
@@ -650,20 +666,36 @@ def generar_pdf(datos):
     elements.append(Paragraph("DEVOLUCION A ALMACEN", sec_style))
     dev = datos.get('devolucion_almacen', 'Ninguno')
     if normalizar(dev) == 'ninguno' or not dev:
-        dev_rows = [['Material', 'Cantidad'], ['—', '—']]
+        dev_rows = [['Material / Concepto', 'Cantidad'], ['—', '—']]
     else:
-        dev_rows = [['Material', 'Cantidad']]
-        for linea in dev.split('\n'):
-            linea = linea.strip()
+        import re as _re
+        def _parse_linea_mat(linea):
+            linea = linea.strip().lstrip('•-–').strip()
             if not linea:
-                continue
-            if '—' in linea:
-                parts = linea.split('—', 1)
-            elif '-' in linea:
-                parts = linea.split('-', 1)
-            else:
-                parts = [linea, '']
-            dev_rows.append([parts[0].strip(), parts[1].strip() if len(parts) > 1 else ''])
+                return None
+            for sep in ['—', ' - ', ' – ']:
+                if sep in linea:
+                    parts = linea.split(sep, 1)
+                    a, b = parts[0].strip(), parts[1].strip()
+                    if _re.match(r'^[\d,.]+\s*[a-zA-ZºáéíóúüÁÉÍÓÚÜ²³/]+', a) and len(b) > len(a):
+                        return (b, a)
+                    return (a, b)
+            m = _re.search(
+                r'^(.*?)\s+([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros)?\.?)\s*$',
+                linea, _re.IGNORECASE)
+            if m and m.group(2).strip():
+                return (m.group(1).strip(), m.group(2).strip())
+            m2 = _re.match(
+                r'^([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|bobinas|rollos|cajas|l|litros|sacos|barras|tubos|m²|m2|metros)\.?)\s+(?:de\s+)?(.*)',
+                linea, _re.IGNORECASE)
+            if m2:
+                return (m2.group(2).strip(), m2.group(1).strip())
+            return (linea, '')
+        dev_rows = [['Material / Concepto', 'Cantidad']]
+        for linea in dev.split('\n'):
+            parsed = _parse_linea_mat(linea)
+            if parsed:
+                dev_rows.append([parsed[0], parsed[1]])
     t_dev = Table(dev_rows, colWidths=[10*cm, 7*cm])
     t_dev.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#e65100')),
