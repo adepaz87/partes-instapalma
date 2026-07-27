@@ -203,7 +203,7 @@ SUPERVISOR_WA_2    = 'whatsapp:+34663259208'
 
 def notify_supervisors(texto, media_url=None):
     """Envía notificación WA a ambos supervisores."""
-    notify_supervisors(texto, media_url=media_url)
+    enviar_whatsapp(SUPERVISOR_WA, texto, media_url=media_url)
     enviar_whatsapp(SUPERVISOR_WA_2, texto, media_url=media_url)
 
 GMAIL_USER         = os.environ.get('GMAIL_USER', '')
@@ -4721,11 +4721,11 @@ def finalizar_resumen_mes(numero, datos):
         pdf_bytes_data = generar_pdf_resumen_mes(datos)
         pdf_url = subir_pdf_resumen_mes(pdf_bytes_data, rid)
 
-        # Enviar por WhatsApp al supervisor con enlace al PDF
-        notify_supervisors(texto_wa + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
+        # Enviar por WhatsApp al supervisor con PDF adjunto
+        notify_supervisors(texto_wa, media_url=pdf_url if pdf_url else None)
         # Enviar al operario
         op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
-        enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente." + (f"\n📄 Tu copia: {pdf_url}" if pdf_url else ""))
+        enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente.", media_url=pdf_url if pdf_url else None)
 
         # Enviar por email con PDF adjunto
         try:
