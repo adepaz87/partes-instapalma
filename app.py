@@ -199,7 +199,13 @@ TWILIO_WA_NUMBER   = os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+19784402048')
 SUPERVISOR_EMAIL_1 = 'alberto@adpb.es'
 SUPERVISOR_EMAIL_2 = 'adm2@adpb.es'
 SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
-SUPERVISOR_WA_2    = 'whatsapp:+34654893491'
+SUPERVISOR_WA_2    = 'whatsapp:+34663259208'
+
+def notify_supervisors(texto, media_url=None):
+    """Envía notificación WA a ambos supervisores."""
+    notify_supervisors(texto, media_url=media_url)
+    enviar_whatsapp(SUPERVISOR_WA_2, texto, media_url=media_url)
+
 GMAIL_USER         = os.environ.get('GMAIL_USER', '')
 GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
 
@@ -938,7 +944,7 @@ def finalizar_parte(numero, datos):
         f"🏁 Terminado: {linea_term}\n"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
-    enviar_whatsapp(SUPERVISOR_WA, msg_supervisor)
+    notify_supervisors(msg_supervisor)
 
     # Guardar en base de datos y obtener el ID para la URL del PDF
     parte_id = guardar_parte(datos, numero)
@@ -956,7 +962,7 @@ def finalizar_parte(numero, datos):
             f"🏢 {_clean(datos['cliente'])} | 🔨 {_clean(datos['obra'])}\n"
             f"🏁 {linea_term}"
         )
-        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        notify_supervisors(caption, media_url=pdf_url)
         operario_wa = f"whatsapp:{numero}" if not numero.startswith("whatsapp:") else numero
         enviar_whatsapp(operario_wa,
                         f"✅ *Parte confirmado*\nAquí tienes tu copia en PDF:",
@@ -1507,7 +1513,7 @@ def finalizar_vehiculo(numero, datos):
     if vid:
         pdf_url = f"https://{BOT_URL}/vehiculos/{vid}/pdf"
         caption = f"Parte Vehiculo - {mat} - {mes}\nKm: {datos.get('km_inicio','')} a {datos.get('km_fin','')}"
-        enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+        notify_supervisors(caption, media_url=pdf_url)
         op_wa = numero if numero.startswith("whatsapp:") else f"whatsapp:{numero}"
         enviar_whatsapp(op_wa, "Parte de vehiculo enviado. Aqui tienes tu copia:", media_url=pdf_url)
 
@@ -1767,7 +1773,7 @@ def webhook():
             borrar_estado(numero)
             msg.body('\u2705 Revision registrada correctamente. Gracias ' + _nom_rev + '!')
             try:
-                enviar_whatsapp(SUPERVISOR_WA,
+                notify_supervisors(
                     '\u2705 *Revision herramienta - OK*\n'
                     + '\U0001f477 Operario: ' + _nom_rev + '\n'
                     + '\U0001f4c5 Fecha: ' + _fecha_hoy)
@@ -1847,8 +1853,7 @@ def webhook():
         ok, respuesta = herramienta_alta_obra(nombre_herr, obra_herr, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            enviar_whatsapp(SUPERVISOR_WA,
-                f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
+            notify_supervisors(f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_baja_nombre':
@@ -1866,8 +1871,7 @@ def webhook():
         ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            enviar_whatsapp(SUPERVISOR_WA,
-                f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
+            notify_supervisors(f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_nueva_cantidad':
@@ -1894,8 +1898,7 @@ def webhook():
             stock_total = _cur.fetchone()[0]
             _c.commit(); _cur.close(); _c.close()
             msg.body(f"✅ *{nombre_nueva.capitalize()}* añadida al almacén.\n📦 Stock actual: {int(stock_total)} ud.")
-            enviar_whatsapp(SUPERVISOR_WA,
-                f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
+            notify_supervisors(f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
         except Exception as _e:
             msg.body(f"❌ Error al guardar: {_e}")
         return str(resp) if not use_meta else ('OK', 200)
@@ -1922,9 +1925,9 @@ def webhook():
                 subir_pdf_albaran(pdf_bytes, ref)
                 pdf_url = f"https://bot-production-66b8.up.railway.app/albaran/{ref}.pdf"
                 texto = f"📊 *{titulo}*\n\nListado generado."
-                enviar_whatsapp(SUPERVISOR_WA, texto, media_url=pdf_url)
+                notify_supervisors(texto, media_url=pdf_url)
             except Exception as e:
-                enviar_whatsapp(SUPERVISOR_WA, f"❌ Error generando listado: {e}")
+                notify_supervisors(f"❌ Error generando listado: {e}")
         _th.Thread(target=_gen_listado, daemon=True).start()
         msg.body("⏳ Generando PDF de stock, te lo envío en un momento...")
         return str(resp) if not use_meta else ('OK', 200)
@@ -2634,9 +2637,9 @@ def webhook():
                 f"⏱️ {datos.get('horas','')} h | {'⚠️ ' + str(nno) + ' incidencias' if nno > 0 else '✅ Sin incidencias'}"
             )
             if pdf_url:
-                enviar_whatsapp(SUPERVISOR_WA, caption, media_url=pdf_url)
+                notify_supervisors(caption, media_url=pdf_url)
             else:
-                enviar_whatsapp(SUPERVISOR_WA, caption)
+                notify_supervisors(caption)
             # Email con PDF (en thread para no bloquear)
             if mid:
                 import threading as _th_ge
@@ -3120,7 +3123,7 @@ def webhook():
                 )
                 enviar_whatsapp(op_wa, texto)
                 # Enviar al supervisor
-                enviar_whatsapp(SUPERVISOR_WA,
+                notify_supervisors(
                     f"📤 *Salida almacén — {numero_alb}*\n👷 {nombre_op}\n🏢 {obra}\n{resumen_txt}"
                     + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
                 # Email con PDF adjunto
@@ -3151,7 +3154,7 @@ def webhook():
                     print(f"Error email salida almacén: {e_mail_sal}")
                 # Alertas de stock bajo
                 for a in alertas:
-                    enviar_whatsapp(SUPERVISOR_WA, a)
+                    notify_supervisors(a)
             _th.Thread(target=_procesar_salida, daemon=True).start()
             msg.body(f"✅ Salida registrada. Te envío el albarán en un momento.")
         elif es_cancelacion(incoming_msg):
@@ -3294,9 +3297,7 @@ def webhook():
                     f"━━━━━━━━━━━━━━━━━━━━"
                 )
                 enviar_whatsapp(op_wa, texto, media_url=pdf_url if pdf_url else None)
-                enviar_whatsapp(SUPERVISOR_WA,
-                    f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}",
-                    media_url=pdf_url if pdf_url else None)
+                notify_supervisors(f"📥 *Devolución almacén — {numero_alb}*\n👷 {nombre_op}\n🏗️ {obra_proc}\n{resumen_txt}", media_url=pdf_url if pdf_url else None)
                 # Email con PDF adjunto
                 try:
                     nombre_pdf_dev = f"Albaran_Devolucion_{numero_alb.replace('/','_').replace('-','_')}.pdf"
@@ -3412,7 +3413,7 @@ def webhook():
             op_nombre = datos_vac.get('nombre_operario', nombre_operario(numero))
             # Notificar a Alberto
             if vac_id:
-                enviar_whatsapp(SUPERVISOR_WA,
+                notify_supervisors(
                     f"🌴 *SOLICITUD DE VACACIONES #{vac_id}*\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"👷 {op_nombre}\n"
@@ -4721,7 +4722,7 @@ def finalizar_resumen_mes(numero, datos):
         pdf_url = subir_pdf_resumen_mes(pdf_bytes_data, rid)
 
         # Enviar por WhatsApp al supervisor con enlace al PDF
-        enviar_whatsapp(SUPERVISOR_WA, texto_wa + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
+        notify_supervisors(texto_wa + (f"\n📄 PDF: {pdf_url}" if pdf_url else ""))
         # Enviar al operario
         op_wa = numero if numero.startswith('whatsapp:') else f'whatsapp:+{numero.lstrip("+")}'
         enviar_whatsapp(op_wa, f"✅ Resumen de {mes} enviado correctamente." + (f"\n📄 Tu copia: {pdf_url}" if pdf_url else ""))
@@ -6303,7 +6304,7 @@ def web_alta_obra():
             conn.commit()
             # Notificar al supervisor
             try:
-                enviar_whatsapp(SUPERVISOR_WA, f"📤 *Alta herramienta en obra*\n🔧 {row[0]}\n🏗️ Obra: {obra}\n👷 Responsable: {resp_ or 'Sin especificar'}")
+                notify_supervisors(f"📤 *Alta herramienta en obra*\n🔧 {row[0]}\n🏗️ Obra: {obra}\n👷 Responsable: {resp_ or 'Sin especificar'}")
             except Exception as _e:
                 print(f"Notif alta obra: {_e}")
         cur.close(); conn.close()
@@ -6389,7 +6390,7 @@ def web_devolucion():
                     print(f"Error devolucion {oid}: {e}")
             conn.commit()
             try:
-                enviar_whatsapp(SUPERVISOR_WA, f"📥 *Devolución herramienta al almacén*\n{len(oids)} unidad(es) devuelta(s)")
+                notify_supervisors(f"📥 *Devolución herramienta al almacén*\n{len(oids)} unidad(es) devuelta(s)")
             except Exception as _e:
                 print(f"Notif devolucion: {_e}")
             cur.close(); conn.close()
@@ -6468,7 +6469,7 @@ def web_baja_obra(oid):
             conn.commit()
             if info:
                 try:
-                    enviar_whatsapp(SUPERVISOR_WA, f"📥 *Baja herramienta (vuelta al almacén)*\n🔧 {info[0]}\n👷 Operario: {info[1] or 'Sin especificar'}\n🏗️ Obra: {info[2] or 'Sin especificar'}")
+                    notify_supervisors(f"📥 *Baja herramienta (vuelta al almacén)*\n🔧 {info[0]}\n👷 Operario: {info[1] or 'Sin especificar'}\n🏗️ Obra: {info[2] or 'Sin especificar'}")
                 except Exception as _e:
                     print(f"Notif baja obra: {_e}")
         cur.close(); conn.close()
