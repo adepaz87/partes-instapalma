@@ -619,37 +619,50 @@ def generar_pdf(datos):
     elements.append(Paragraph("MATERIAL DE STOCK", sec_style))
     mat = datos.get('material_stock', 'Ninguno')
     if normalizar(mat) == 'ninguno' or not mat:
-        mat_rows = [['Material / Concepto', 'Cantidad'], ['—', '—']]
+        mat_rows = [['Cantidad', 'Material / Concepto'], ['—', '—']]
     else:
         import re as _re
         def _parse_linea_mat(linea):
-            linea = linea.strip().lstrip('•-–').strip()
+            linea = linea.strip().lstrip('•-–*').strip()
             if not linea:
                 return None
-            for sep in ['—', ' - ', ' – ']:
+            # Separador explícito — o -
+            for sep in ['—', ' – ']:
                 if sep in linea:
                     parts = linea.split(sep, 1)
                     a, b = parts[0].strip(), parts[1].strip()
-                    if _re.match(r'^[\d,.]+\s*[a-zA-ZºáéíóúüÁÉÍÓÚÜ²³/]+', a) and len(b) > len(a):
+                    # Decidir qué lado es cantidad
+                    if _re.match(r'^[\d,.]+', a) and not _re.match(r'^[\d,.]+', b):
+                        return (a, b)
+                    elif _re.match(r'^[\d,.]+', b) and not _re.match(r'^[\d,.]+', a):
                         return (b, a)
                     return (a, b)
-            m = _re.search(
-                r'^(.*?)\s+([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros)?\.?)\s*$',
+            # Cantidad al inicio: "5m cable", "2 ud pulsador", "1,5 kg tubo"
+            m = _re.match(
+                r'^([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros|rollo|bobina|juego|juegos|jgo)?)\.?\s+(?:de\s+)?(.+)',
                 linea, _re.IGNORECASE)
             if m and m.group(2).strip():
                 return (m.group(1).strip(), m.group(2).strip())
-            m2 = _re.match(
-                r'^([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|bobinas|rollos|cajas|l|litros|sacos|barras|tubos|m²|m2|metros)\.?)\s+(?:de\s+)?(.*)',
+            # Cantidad al final: "cable 2.5mm² 20m"
+            m2 = _re.search(
+                r'^(.+?)\s+([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros)\.?)\s*$',
                 linea, _re.IGNORECASE)
             if m2:
                 return (m2.group(2).strip(), m2.group(1).strip())
-            return (linea, '')
-        mat_rows = [['Material / Concepto', 'Cantidad']]
-        for linea in mat.split('\n'):
+            # Sin cantidad reconocible — concepto solo
+            return ('', linea)
+        # Admitir tanto saltos de línea como ; como separador
+        lineas_raw = []
+        for seg in mat.replace('\n', ';').split(';'):
+            seg = seg.strip()
+            if seg:
+                lineas_raw.append(seg)
+        mat_rows = [['Cantidad', 'Material / Concepto']]
+        for linea in lineas_raw:
             parsed = _parse_linea_mat(linea)
             if parsed:
                 mat_rows.append([parsed[0], parsed[1]])
-    t_mat = Table(mat_rows, colWidths=[10*cm, 7*cm])
+    t_mat = Table(mat_rows, colWidths=[3*cm, 14*cm])
     t_mat.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), AZUL),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -666,37 +679,50 @@ def generar_pdf(datos):
     elements.append(Paragraph("DEVOLUCION A ALMACEN", sec_style))
     dev = datos.get('devolucion_almacen', 'Ninguno')
     if normalizar(dev) == 'ninguno' or not dev:
-        dev_rows = [['Material / Concepto', 'Cantidad'], ['—', '—']]
+        dev_rows = [['Cantidad', 'Material / Concepto'], ['—', '—']]
     else:
         import re as _re
         def _parse_linea_mat(linea):
-            linea = linea.strip().lstrip('•-–').strip()
+            linea = linea.strip().lstrip('•-–*').strip()
             if not linea:
                 return None
-            for sep in ['—', ' - ', ' – ']:
+            # Separador explícito — o -
+            for sep in ['—', ' – ']:
                 if sep in linea:
                     parts = linea.split(sep, 1)
                     a, b = parts[0].strip(), parts[1].strip()
-                    if _re.match(r'^[\d,.]+\s*[a-zA-ZºáéíóúüÁÉÍÓÚÜ²³/]+', a) and len(b) > len(a):
+                    # Decidir qué lado es cantidad
+                    if _re.match(r'^[\d,.]+', a) and not _re.match(r'^[\d,.]+', b):
+                        return (a, b)
+                    elif _re.match(r'^[\d,.]+', b) and not _re.match(r'^[\d,.]+', a):
                         return (b, a)
                     return (a, b)
-            m = _re.search(
-                r'^(.*?)\s+([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros)?\.?)\s*$',
+            # Cantidad al inicio: "5m cable", "2 ud pulsador", "1,5 kg tubo"
+            m = _re.match(
+                r'^([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros|rollo|bobina|juego|juegos|jgo)?)\.?\s+(?:de\s+)?(.+)',
                 linea, _re.IGNORECASE)
             if m and m.group(2).strip():
                 return (m.group(1).strip(), m.group(2).strip())
-            m2 = _re.match(
-                r'^([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|bobinas|rollos|cajas|l|litros|sacos|barras|tubos|m²|m2|metros)\.?)\s+(?:de\s+)?(.*)',
+            # Cantidad al final: "cable 2.5mm² 20m"
+            m2 = _re.search(
+                r'^(.+?)\s+([\d,.]+\s*(?:m|ml|cm|mm|kg|g|ud|uds|u|unid|unidades|pcs|piezas|bobinas|rollos|cajas|caja|l|litros|h|horas|sacos|barras|tubos|m²|m2|metros)\.?)\s*$',
                 linea, _re.IGNORECASE)
             if m2:
                 return (m2.group(2).strip(), m2.group(1).strip())
-            return (linea, '')
-        dev_rows = [['Material / Concepto', 'Cantidad']]
-        for linea in dev.split('\n'):
+            # Sin cantidad reconocible — concepto solo
+            return ('', linea)
+        # Admitir tanto saltos de línea como ; como separador
+        lineas_raw = []
+        for seg in dev.replace('\n', ';').split(';'):
+            seg = seg.strip()
+            if seg:
+                lineas_raw.append(seg)
+        dev_rows = [['Cantidad', 'Material / Concepto']]
+        for linea in lineas_raw:
             parsed = _parse_linea_mat(linea)
             if parsed:
                 dev_rows.append([parsed[0], parsed[1]])
-    t_dev = Table(dev_rows, colWidths=[10*cm, 7*cm])
+    t_dev = Table(dev_rows, colWidths=[3*cm, 14*cm])
     t_dev.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#e65100')),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -2397,10 +2423,12 @@ def webhook():
         set_paso(numero, 'material_stock')
         msg.body(
             "6️⃣ *Material de stock* utilizado\n\n"
-            "Escribe el material, uno por línea:\n"
+            "Escribe cada material separado por *;*\n"
             "_Ejemplo:_\n"
-            "Cable 2.5mm² — 20m\n"
-            "Caja superficie — 2ud\n\n"
+            "5m cable 2.5mm²; 2ud pulsador; 1 caja superficie\n\n"
+            "O uno por línea:\n"
+            "5m cable 2.5mm²\n"
+            "2ud pulsador\n\n"
             "Si no hay, escribe: *ninguno*"
         )
 
@@ -2411,7 +2439,7 @@ def webhook():
         msg.body(
             "7️⃣ *Devolución a Almacén*\n\n"
             "¿Devuelves algún material al almacén?\n"
-            "_Ejemplo: Cable 2.5mm² — 10m sobrantes_\n\n"
+            "_Ejemplo: 10m cable 2.5mm²; 3ud pulsador_\n\n"
             "Si no hay, escribe: *ninguno*"
         )
 
