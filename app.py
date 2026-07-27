@@ -4583,7 +4583,14 @@ def generar_pdf_resumen_mes(datos):
             suffix = '.jpg'
             if '.png' in foto_url.lower(): suffix = '.png'
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            _ur.urlretrieve(foto_url, tmp.name)
+            # Twilio media URLs requieren autenticación básica
+            try:
+                import requests as _req
+                _r = _req.get(foto_url, auth=(TWILIO_SID, TWILIO_TOKEN), timeout=15)
+                with open(tmp.name, 'wb') as _tf:
+                    _tf.write(_r.content)
+            except Exception:
+                _ur.urlretrieve(foto_url, tmp.name)
             sec_style = ParagraphStyle('sec', fontSize=10, textColor=colors.white,
                 backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=4, spaceBefore=6, borderPad=4)
             elements.append(Paragraph('JUSTIFICANTE / FOTO', sec_style))
