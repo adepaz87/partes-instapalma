@@ -2803,6 +2803,22 @@ def webhook():
                 "Por favor envía la imagen para continuar."
             )
         else:
+            # Descargar la foto de Twilio ahora (URL expira pronto) y guardarla en BD
+            try:
+                import requests as _req_foto
+                _r_foto = _req_foto.get(foto_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=15)
+                foto_bytes = _r_foto.content
+                foto_ref = f"RESUMEN-FOTO-{numero}-{int(__import__('time').time())}"
+                _conn_f = get_db(); _cur_f = _conn_f.cursor()
+                _cur_f.execute("""
+                    INSERT INTO stock_albaranes (numero, pdf_bytes)
+                    VALUES (%s, %s)
+                    ON CONFLICT (numero) DO UPDATE SET pdf_bytes = %s
+                """, (foto_ref, psycopg2.Binary(foto_bytes), psycopg2.Binary(foto_bytes)))
+                _conn_f.commit(); _cur_f.close(); _conn_f.close()
+                set_dato(numero, 'foto_ref', foto_ref)
+            except Exception as _e_foto:
+                print(f"Aviso: no se pudo pre-descargar foto justificante: {_e_foto}")
             set_dato(numero, 'foto_url', foto_url)
             set_paso(numero, 'resumen_confirmar')
             datos_r = get_estado(numero)['datos']
@@ -4637,35 +4653,53 @@ def generar_pdf_resumen_mes(datos):
 
     # Foto si existe
     foto_url = datos.get('foto_url', '')
-    if foto_url:
+    foto_ref = datos.get('foto_ref', '')
+    if foto_url or foto_ref:
         try:
-            import urllib.request as _ur
             import tempfile, os as _os
             suffix = '.jpg'
-            if '.png' in foto_url.lower(): suffix = '.png'
+            if foto_url and '.png' in foto_url.lower(): suffix = '.png'
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-            # Twilio media URLs requieren autenticación básica
-            try:
-                import requests as _req
-                _r = _req.get(foto_url, auth=(TWILIO_SID, TWILIO_TOKEN), timeout=15)
+
+            foto_bytes = None
+            # Intentar primero desde BD (bytes pre-descargados)
+            if foto_ref:
+                try:
+                    _conn_pdf = get_db(); _cur_pdf = _conn_pdf.cursor()
+                    _cur_pdf.execute("SELECT pdf_bytes FROM stock_albaranes WHERE numero = %s", (foto_ref,))
+                    row_foto = _cur_pdf.fetchone()
+                    _cur_pdf.close(); _conn_pdf.close()
+                    if row_foto and row_foto[0]:
+                        foto_bytes = bytes(row_foto[0])
+                except Exception as _e_bd:
+                    print(f"Aviso: no se pudo leer foto desde BD: {_e_bd}")
+
+            # Fallback: descargar de Twilio
+            if not foto_bytes and foto_url:
+                try:
+                    import requests as _req
+                    _r = _req.get(foto_url, auth=(TWILIO_SID, TWILIO_TOKEN), timeout=15)
+                    foto_bytes = _r.content
+                except Exception as _e_tw:
+                    print(f"Aviso: no se pudo descargar foto de Twilio: {_e_tw}")
+
+            if foto_bytes:
                 with open(tmp.name, 'wb') as _tf:
-                    _tf.write(_r.content)
-            except Exception:
-                _ur.urlretrieve(foto_url, tmp.name)
-            sec_style = ParagraphStyle('sec', fontSize=10, textColor=colors.white,
-                backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=4, spaceBefore=6, borderPad=4)
-            elements.append(Paragraph('JUSTIFICANTE / FOTO', sec_style))
-            elements.append(Spacer(1, 0.2*cm))
-            img_w = 14*cm
-            from PIL import Image as PILImg
-            with PILImg.open(tmp.name) as im:
-                w, h = im.size
-                img_h = img_w * h / w
-                if img_h > 18*cm:
-                    img_h = 18*cm
-                    img_w = img_h * w / h
-            foto_img = RLImage(tmp.name, width=img_w, height=img_h)
-            elements.append(foto_img)
+                    _tf.write(foto_bytes)
+                sec_style = ParagraphStyle('sec', fontSize=10, textColor=colors.white,
+                    backColor=AZUL, fontName='Helvetica-Bold', spaceAfter=4, spaceBefore=6, borderPad=4)
+                elements.append(Paragraph('JUSTIFICANTE / FOTO', sec_style))
+                elements.append(Spacer(1, 0.2*cm))
+                img_w = 14*cm
+                from PIL import Image as PILImg
+                with PILImg.open(tmp.name) as im:
+                    w, h = im.size
+                    img_h = img_w * h / w
+                    if img_h > 18*cm:
+                        img_h = 18*cm
+                        img_w = img_h * w / h
+                foto_img = RLImage(tmp.name, width=img_w, height=img_h)
+                elements.append(foto_img)
             _os.unlink(tmp.name)
         except Exception as e:
             print(f"Error foto PDF: {e}")
