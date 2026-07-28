@@ -4731,8 +4731,16 @@ def subir_pdf_resumen_mes(pdf_bytes, rid):
 
 def finalizar_resumen_mes(numero, datos):
     """Guarda, genera PDF, envía por WhatsApp (URL) y por email con adjunto."""
-    import threading
+    import threading, traceback
     def _enviar():
+        try:
+            _enviar_inner()
+        except Exception as _e_outer:
+            err_msg = f"\u274c ERROR resumen_mes:\n{traceback.format_exc()[-500:]}"
+            print(err_msg)
+            try: enviar_whatsapp(SUPERVISOR_WA, err_msg)
+            except: pass
+    def _enviar_inner():
         rid = guardar_resumen_mes(datos, numero)
         nombre_op = datos.get('nombre_operario', nombre_operario(numero))
         mes = datos.get('mes','')
