@@ -3708,7 +3708,7 @@ def servir_albaran_pdf(numero_pdf):
         pdf_data = bytes(row[0])
         nombre = f"Albaran_{row[1].replace('/','_')}.pdf"
         return Response(pdf_data, mimetype='application/pdf',
-            headers={'Content-Disposition': f'inline; filename="{nombre}"',
+            headers={'Content-Disposition': f'attachment; filename="{nombre}"',
                      'Content-Type': 'application/pdf'})
     except Exception as e:
         print(f"Error servir albaran PDF: {e}")
