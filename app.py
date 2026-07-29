@@ -2772,7 +2772,7 @@ def webhook():
             "1 Edificio Sabino 8h\n"
             "2 Taller Chopo 9h\n"
             "3 Edificio Domingo 9h\n\n"
-            "También acepto el formato `Fecha; Obra; Horas`. Envía todas las líneas juntas."
+            "Solo separa los datos con espacios. Envía todas las líneas juntas."
         )
 
     elif paso == 'resumen_horas_diarias':
@@ -2812,9 +2812,9 @@ def webhook():
                 _errores_horas.append(_linea)
         if not _lineas_horas or _errores_horas:
             msg.body(
-                "⚠️ No he podido interpretar todas las líneas. Usa exactamente:\n"
-                "`Fecha; Obra; Horas`\n"
-                "Ejemplo: `01/07/2026; Hotel Monterrey; 8`\n\n"
+                "⚠️ No he podido interpretar todas las líneas. Usa este formato, separando con espacios:\n"
+                "`Día Obra Horas`\n"
+                "Ejemplo: `1 Edificio Sabino 8h`\n\n"
                 "Líneas con error:\n" + '\n'.join(_errores_horas[:5])
             )
         else:
