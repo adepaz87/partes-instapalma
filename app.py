@@ -2764,67 +2764,82 @@ def webhook():
 
     elif paso == 'resumen_mes':
         set_dato(numero, 'mes', incoming_msg)
-        set_paso(numero, 'resumen_horas')
-        msg.body("2️⃣ ¿Cuántas *horas extra* has realizado este mes?\n_Ejemplo: 8_")
+        set_paso(numero, 'resumen_horas_diarias')
+        msg.body(
+            "2️⃣ Introduce las horas **totales trabajadas cada día**, una por línea, con este formato:\n"
+            "`Fecha; Obra; Horas`\n\n"
+            "Ejemplo:\n"
+            "01/07/2026; Hotel Monterrey; 8\n"
+            "02/07/2026; Teatro Monterrey; 7,5\n"
+            "03/07/2026; Hotel Monterrey; 8\n\n"
+            "Cuando termines, envía todas las líneas juntas."
+        )
 
-    elif paso == 'resumen_horas':
+    elif paso == 'resumen_horas_diarias':
+        import re as _re_horas
+        _lineas_horas = []
+        _errores_horas = []
+        for _linea in incoming_msg.splitlines():
+            _linea = _linea.strip()
+            if not _linea:
+                continue
+            _partes_h = [x.strip() for x in _linea.split(';')]
+            if len(_partes_h) != 3:
+                _errores_horas.append(_linea)
+                continue
+            _fecha_h, _obra_h, _horas_h = _partes_h
+            try:
+                _horas_num = float(_horas_h.replace(',', '.'))
+                if _horas_num < 0 or _horas_num > 24:
+                    raise ValueError()
+                _lineas_horas.append({'fecha': _fecha_h, 'obra': _obra_h, 'horas': _horas_num})
+            except Exception:
+                _errores_horas.append(_linea)
+        if not _lineas_horas or _errores_horas:
+            msg.body(
+                "⚠️ No he podido interpretar todas las líneas. Usa exactamente:\n"
+                "`Fecha; Obra; Horas`\n"
+                "Ejemplo: `01/07/2026; Hotel Monterrey; 8`\n\n"
+                "Líneas con error:\n" + '\n'.join(_errores_horas[:5])
+            )
+        else:
+            set_dato(numero, 'horas_diarias', _lineas_horas)
+            set_paso(numero, 'resumen_horas_extra')
+            _total_h = sum(x['horas'] for x in _lineas_horas)
+            msg.body(
+                f"✅ {_total_h:g} horas registradas en {len(_lineas_horas)} días.\n\n"
+                "3️⃣ ¿Cuántas **horas extra** has realizado este mes?\n"
+                "Si ninguna, escribe `0`."
+            )
+
+    elif paso == 'resumen_horas_extra':
         set_dato(numero, 'horas_extra', incoming_msg)
         set_paso(numero, 'resumen_vacaciones')
-        msg.body("3️⃣ ¿Cuántos *días de vacaciones* has disfrutado este mes?\n_Ejemplo: 5_")
+        msg.body("4️⃣ ¿Cuántos **días de vacaciones** has disfrutado este mes?\nSi ninguno, escribe `0`.")
 
     elif paso == 'resumen_vacaciones':
         set_dato(numero, 'dias_vacaciones', incoming_msg)
         set_paso(numero, 'resumen_gastos')
-        msg.body("4️⃣ ¿Cuál es el *total de gastos* del mes? (en €)\n_Ejemplo: 127.50_")
+        msg.body("5️⃣ ¿Cuál es el **total de gastos** del mes? (en €)\nSi no hay, escribe `0`.")
 
     elif paso == 'resumen_gastos':
         set_dato(numero, 'total_gastos', incoming_msg)
-        set_paso(numero, 'resumen_foto')
+        set_paso(numero, 'resumen_confirmar')
+        datos_r = get_estado(numero)['datos']
+        _total_h = sum(float(x.get('horas', 0)) for x in datos_r.get('horas_diarias', []))
         msg.body(
-            "5️⃣ Adjunta la *foto del justificante* 📎\n"
-            "_Es obligatoria para enviar el resumen._"
+            f"📊 *RESUMEN FIN DE MES*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"📅 Mes: {datos_r.get('mes','')}\n"
+            f"👷 {datos_r.get('nombre_operario','')}\n"
+            f"⏱ Horas totales: {_total_h:g}\n"
+            f"📋 Días registrados: {len(datos_r.get('horas_diarias', []))}\n"
+            f"⏱ Horas extra: {datos_r.get('horas_extra','0')}\n"
+            f"🌴 Días vacaciones: {datos_r.get('dias_vacaciones','0')}\n"
+            f"💶 Total gastos: {datos_r.get('total_gastos','0')} €\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"¿Es correcto? Responde *SÍ* o *NO*"
         )
-
-    elif paso == 'resumen_foto':
-        # Foto obligatoria — si no hay imagen, pedir de nuevo
-        foto_url = media_url if media_url else ''
-        if not foto_url:
-            msg.body(
-                "⚠️ Necesito que adjuntes la *foto del justificante*.\n"
-                "Por favor envía la imagen para continuar."
-            )
-        else:
-            # Descargar la foto de Twilio ahora (URL expira pronto) y guardarla en BD
-            try:
-                import requests as _req_foto
-                _r_foto = _req_foto.get(foto_url, auth=(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN), timeout=15)
-                foto_bytes = _r_foto.content
-                foto_ref = f"RESUMEN-FOTO-{numero}-{int(__import__('time').time())}"
-                _conn_f = get_db(); _cur_f = _conn_f.cursor()
-                _cur_f.execute("""
-                    INSERT INTO stock_albaranes (numero, pdf_bytes)
-                    VALUES (%s, %s)
-                    ON CONFLICT (numero) DO UPDATE SET pdf_bytes = %s
-                """, (foto_ref, psycopg2.Binary(foto_bytes), psycopg2.Binary(foto_bytes)))
-                _conn_f.commit(); _cur_f.close(); _conn_f.close()
-                set_dato(numero, 'foto_ref', foto_ref)
-            except Exception as _e_foto:
-                print(f"Aviso: no se pudo pre-descargar foto justificante: {_e_foto}")
-            set_dato(numero, 'foto_url', foto_url)
-            set_paso(numero, 'resumen_confirmar')
-            datos_r = get_estado(numero)['datos']
-            msg.body(
-                f"📊 *RESUMEN FIN DE MES*\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"📅 Mes: {datos_r.get('mes','')}\n"
-                f"👷 {datos_r.get('nombre_operario','')}\n"
-                f"⏱ Horas extra: {datos_r.get('horas_extra','0')}\n"
-                f"🌴 Días vacaciones: {datos_r.get('dias_vacaciones','0')}\n"
-                f"💶 Total gastos: {datos_r.get('total_gastos','0')} €\n"
-                f"📎 Foto adjunta ✅\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"¿Es correcto? Responde *SÍ* o *NO*"
-            )
 
     elif paso == 'resumen_confirmar':
         if es_confirmacion(incoming_msg):
@@ -4561,9 +4576,11 @@ def guardar_resumen_mes(datos, numero_operario):
         conn = get_db()
         cur = conn.cursor()
         nombre = datos.get('nombre_operario', nombre_operario(numero_operario))
+        # Compatible con instalaciones existentes: guardar el detalle diario en JSONB.
+        cur.execute("ALTER TABLE resumen_mes ADD COLUMN IF NOT EXISTS horas_diarias JSONB")
         cur.execute("""
-            INSERT INTO resumen_mes (operario, nombre_operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
+            INSERT INTO resumen_mes (operario, nombre_operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url, horas_diarias, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, NOW())
             RETURNING id
         """, (
             numero_operario,
@@ -4573,6 +4590,7 @@ def guardar_resumen_mes(datos, numero_operario):
             datos.get('dias_vacaciones', '0'),
             datos.get('total_gastos', '0'),
             datos.get('foto_url', ''),
+            json.dumps(datos.get('horas_diarias', []), ensure_ascii=False),
         ))
         rid = cur.fetchone()[0]
         conn.commit()
@@ -4640,6 +4658,33 @@ def generar_pdf_resumen_mes(datos):
         ('ROWBACKGROUNDS', (1,0), (1,-1), [colors.white, GRIS]),
     ]))
     elements.append(t)
+
+    # Detalle diario de horas totales
+    _horas_diarias = datos.get('horas_diarias', []) or []
+    if _horas_diarias:
+        elements.append(Spacer(1, 0.5*cm))
+        elements.append(Paragraph('DETALLE DIARIO DE HORAS TOTALES', ParagraphStyle(
+            'sec_horas', fontSize=10, textColor=colors.white, backColor=AZUL,
+            fontName='Helvetica-Bold', spaceAfter=4, spaceBefore=6, borderPad=4)))
+        _filas_h = [['Fecha', 'Obra', 'Horas']]
+        _total_h_pdf = 0
+        for _h in _horas_diarias:
+            _valor_h = float(_h.get('horas', 0))
+            _total_h_pdf += _valor_h
+            _filas_h.append([str(_h.get('fecha', '')), str(_h.get('obra', '')), f'{_valor_h:g}'])
+        _filas_h.append(['', 'TOTAL HORAS', f'{_total_h_pdf:g}'])
+        _th = Table(_filas_h, colWidths=[3.2*cm, 10.5*cm, 3.3*cm], repeatRows=1)
+        _th.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), AZUL),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0,-1), (-1,-1), GRIS),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('PADDING', (0,0), (-1,-1), 6),
+        ]))
+        elements.append(_th)
     elements.append(Spacer(1, 0.5*cm))
 
     # Foto si existe
