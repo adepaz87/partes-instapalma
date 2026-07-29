@@ -313,6 +313,7 @@ MENU_PRINCIPAL = (
     "3️⃣ Herramienta\n"
     "4️⃣ Vacaciones\n"
     "5️⃣ Resumen fin de mes\n"
+    "   _Horas diarias: día obra horas (ej. 1 Edificio Sabino 8h)_\n"
     "6️⃣ Vehículos\n"
     "7️⃣ Mantenimiento GE (TBSA)\n\n"
     "_Escribe el número o la palabra clave directamente_"
