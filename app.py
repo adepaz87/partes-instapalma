@@ -4138,6 +4138,12 @@ def migrate():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/tutorial')
+def tutorial():
+    return """<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Tutorial — Instapalma</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#1a3a5c;line-height:1.5}h1{border-bottom:3px solid #1a3a5c;padding-bottom:10px}h2{margin-top:28px;color:#1a3a5c}li{margin:8px 0}code,pre{background:#f1f4f7;padding:10px;border-radius:6px;display:block;white-space:pre-wrap} .box{background:#f1f4f7;padding:14px;border-radius:8px}</style></head><body><h1>📘 Tutorial Instapalma</h1><h2>Resumen fin de mes</h2><ol><li>Escribe <b>resumen mes</b>.</li><li>Indica tu nombre y el mes.</li><li>Introduce las horas totales diarias, una línea por día, separando con espacios:</li></ol><pre>1 Edificio Sabino 8h
+2 Taller Chopo 9h
+3 Edificio Domingo 9h</pre><p>El primer número es el día, el texto central es la obra y el último valor son las horas. También puedes usar decimales, por ejemplo <b>7,5h</b>.</p><ol start='4'><li>Indica las horas extra.</li><li>Indica los días de vacaciones.</li><li>Indica el total de gastos.</li><li>Revisa y confirma el resumen.</li></ol><div class='box'>El PDF incluirá el detalle diario, el total de horas, horas extra, vacaciones y gastos.</div><h2>Menú del bot</h2><p>Escribe <b>hola</b>, <b>menú</b> o <b>ayuda</b> para ver las opciones disponibles.</p></body></html>"""
+
 @app.route('/')
 def dashboard():
     try:
