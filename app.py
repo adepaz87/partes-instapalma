@@ -1776,7 +1776,7 @@ def webhook():
             borrar_estado(numero)
             msg.body('\u2705 Revision registrada correctamente. Gracias ' + _nom_rev + '!')
             try:
-                notify_supervisors(
+                enviar_whatsapp(SUPERVISOR_WA, 
                     '\u2705 *Revision herramienta - OK*\n'
                     + '\U0001f477 Operario: ' + _nom_rev + '\n'
                     + '\U0001f4c5 Fecha: ' + _fecha_hoy)
@@ -1803,7 +1803,7 @@ def webhook():
             borrar_estado(numero)
             msg.body('\u26a0\ufe0f Revision con incidencia registrada. Gracias ' + _nom_rev + '. Alberto sera notificado.')
             # Notificar a ambos supervisores
-            notify_supervisors(
+            enviar_whatsapp(SUPERVISOR_WA, 
                 f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{msg_n_herr.strip()}'
             )
             return str(resp) if not use_meta else ('OK', 200)
@@ -1824,7 +1824,7 @@ def webhook():
             print(f'Error guardando revision detalle: {_e}')
         borrar_estado(numero)
         msg.body('\u26a0\ufe0f Revision con incidencia registrada. Gracias ' + _nom_rev + '. Alberto sera notificado.')
-        notify_supervisors(
+        enviar_whatsapp(SUPERVISOR_WA, 
             f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{_detalle}'
         )
         return str(resp) if not use_meta else ('OK', 200)
@@ -1844,7 +1844,7 @@ def webhook():
         ok, respuesta = herramienta_alta_obra(nombre_herr, obra_herr, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            notify_supervisors(f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
+            enviar_whatsapp(SUPERVISOR_WA, f"🏗️ *Alta herramienta en obra*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_baja_nombre':
@@ -1862,7 +1862,7 @@ def webhook():
         ok, respuesta = herramienta_baja_obra(nombre_herr, None, numero, nombre_op)
         msg.body(respuesta)
         if ok:
-            notify_supervisors(f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
+            enviar_whatsapp(SUPERVISOR_WA, f"🔙 *Devolución herramienta → almacén*\n👷 {nombre_op}\n🔧 {nombre_herr}\n📍 Obra: {obra_herr}")
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_nueva_cantidad':
@@ -1889,7 +1889,7 @@ def webhook():
             stock_total = _cur.fetchone()[0]
             _c.commit(); _cur.close(); _c.close()
             msg.body(f"✅ *{nombre_nueva.capitalize()}* añadida al almacén.\n📦 Stock actual: {int(stock_total)} ud.")
-            notify_supervisors(f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
+            enviar_whatsapp(SUPERVISOR_WA, f"📦 *Nueva herramienta en almacén*\n🔧 {nombre_nueva.capitalize()}\n➕ {cantidad} ud. añadidas\n📦 Total: {int(stock_total)} ud.")
         except Exception as _e:
             msg.body(f"❌ Error al guardar: {_e}")
         return str(resp) if not use_meta else ('OK', 200)
