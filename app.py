@@ -2784,7 +2784,7 @@ def webhook():
         _meses_es = {'enero':1, 'febrero':2, 'marzo':3, 'abril':4, 'mayo':5, 'junio':6,
                      'julio':7, 'agosto':8, 'septiembre':9, 'setiembre':9, 'octubre':10,
                      'noviembre':11, 'diciembre':12}
-        _m_match = _re_horas.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\\s*(\\d{4})?', _mes_txt.lower())
+        _m_match = _re_horas.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s*(\d{4})?', _mes_txt.lower())
         _mes_num = _meses_es.get(_m_match.group(1)) if _m_match else None
         _anio_num = int(_m_match.group(2)) if _m_match and _m_match.group(2) else _dt_horas.date.today().year
         for _linea in incoming_msg.splitlines():
@@ -2799,7 +2799,7 @@ def webhook():
                     _fecha_h, _obra_h, _horas_h = _partes_h
                 else:
                     # Formato corto: día + obra + horas; la obra puede tener varias palabras.
-                    _m_h = _re_horas.match(r'^(\\d{1,2})\\s+(.+?)\\s+([0-9]+(?:[.,][0-9]+)?)\\s*h?$', _linea, _re_horas.I)
+                    _m_h = _re_horas.match(r'^(\d{1,2})\s+(.+?)\s+([0-9]+(?:[.,][0-9]+)?)\s*h?$', _linea, _re_horas.I)
                     if not _m_h or not _mes_num:
                         raise ValueError()
                     _dia_h, _obra_h, _horas_h = _m_h.groups()
