@@ -2766,30 +2766,45 @@ def webhook():
         set_dato(numero, 'mes', incoming_msg)
         set_paso(numero, 'resumen_horas_diarias')
         msg.body(
-            "2️⃣ Introduce las horas **totales trabajadas cada día**, una por línea, con este formato:\n"
-            "`Fecha; Obra; Horas`\n\n"
+            "2️⃣ Introduce las horas **totales trabajadas cada día**, una por línea:\n"
+            "`Día Obra Horas`\n\n"
             "Ejemplo:\n"
-            "01/07/2026; Hotel Monterrey; 8\n"
-            "02/07/2026; Teatro Monterrey; 7,5\n"
-            "03/07/2026; Hotel Monterrey; 8\n\n"
-            "Cuando termines, envía todas las líneas juntas."
+            "1 Edificio Sabino 8h\n"
+            "2 Taller Chopo 9h\n"
+            "3 Edificio Domingo 9h\n\n"
+            "También acepto el formato `Fecha; Obra; Horas`. Envía todas las líneas juntas."
         )
 
     elif paso == 'resumen_horas_diarias':
         import re as _re_horas
+        import datetime as _dt_horas
         _lineas_horas = []
         _errores_horas = []
+        _mes_txt = get_estado(numero).get('datos', {}).get('mes', '')
+        _meses_es = {'enero':1, 'febrero':2, 'marzo':3, 'abril':4, 'mayo':5, 'junio':6,
+                     'julio':7, 'agosto':8, 'septiembre':9, 'setiembre':9, 'octubre':10,
+                     'noviembre':11, 'diciembre':12}
+        _m_match = _re_horas.search(r'(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\\s*(\\d{4})?', _mes_txt.lower())
+        _mes_num = _meses_es.get(_m_match.group(1)) if _m_match else None
+        _anio_num = int(_m_match.group(2)) if _m_match and _m_match.group(2) else _dt_horas.date.today().year
         for _linea in incoming_msg.splitlines():
             _linea = _linea.strip()
             if not _linea:
                 continue
-            _partes_h = [x.strip() for x in _linea.split(';')]
-            if len(_partes_h) != 3:
-                _errores_horas.append(_linea)
-                continue
-            _fecha_h, _obra_h, _horas_h = _partes_h
             try:
-                _horas_num = float(_horas_h.replace(',', '.'))
+                if ';' in _linea:
+                    _partes_h = [x.strip() for x in _linea.split(';')]
+                    if len(_partes_h) != 3:
+                        raise ValueError()
+                    _fecha_h, _obra_h, _horas_h = _partes_h
+                else:
+                    # Formato corto: día + obra + horas; la obra puede tener varias palabras.
+                    _m_h = _re_horas.match(r'^(\\d{1,2})\\s+(.+?)\\s+([0-9]+(?:[.,][0-9]+)?)\\s*h?$', _linea, _re_horas.I)
+                    if not _m_h or not _mes_num:
+                        raise ValueError()
+                    _dia_h, _obra_h, _horas_h = _m_h.groups()
+                    _fecha_h = f'{int(_dia_h):02d}/{_mes_num:02d}/{_anio_num}'
+                _horas_num = float(_horas_h.lower().replace('h', '').replace(',', '.').strip())
                 if _horas_num < 0 or _horas_num > 24:
                     raise ValueError()
                 _lineas_horas.append({'fecha': _fecha_h, 'obra': _obra_h, 'horas': _horas_num})
