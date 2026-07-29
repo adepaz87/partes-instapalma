@@ -202,9 +202,12 @@ SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
 SUPERVISOR_WA_2    = 'whatsapp:+34663259208'
 
 def notify_supervisors(texto, media_url=None):
-    """Envía notificación WA a ambos supervisores."""
-    enviar_whatsapp(SUPERVISOR_WA, texto, media_url=media_url)
-    enviar_whatsapp(SUPERVISOR_WA_2, texto, media_url=media_url)
+    """Envía notificación WA a ambos supervisores, de forma independiente."""
+    for _destino in (SUPERVISOR_WA, SUPERVISOR_WA_2):
+        try:
+            enviar_whatsapp(_destino, texto, media_url=media_url)
+        except Exception as _e_notify:
+            print(f"Error notificando supervisor {_destino}: {_e_notify}")
 
 GMAIL_USER         = os.environ.get('GMAIL_USER', '')
 GMAIL_APP_PASSWORD = os.environ.get('GMAIL_APP_PASSWORD', '')
@@ -1799,16 +1802,10 @@ def webhook():
                 print(f'Error guardando revision: {_e}')
             borrar_estado(numero)
             msg.body('\u26a0\ufe0f Revision con incidencia registrada. Gracias ' + _nom_rev + '. Alberto sera notificado.')
-            # Notificar al supervisor
-            try:
-                _notify_client = Client(TWILIO_SID, TWILIO_TOKEN)
-                _notify_client.messages.create(
-                    from_=TWILIO_FROM,
-                    to='whatsapp:+34690875940',
-                    body=f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{msg_n_herr.strip()}'
-                )
-            except Exception as _e:
-                print(f'Error notificando supervisor: {_e}')
+            # Notificar a ambos supervisores
+            notify_supervisors(
+                f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{msg_n_herr.strip()}'
+            )
             return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_revision_detalle':
@@ -1827,15 +1824,9 @@ def webhook():
             print(f'Error guardando revision detalle: {_e}')
         borrar_estado(numero)
         msg.body('\u26a0\ufe0f Revision con incidencia registrada. Gracias ' + _nom_rev + '. Alberto sera notificado.')
-        try:
-            _notify_client = Client(TWILIO_SID, TWILIO_TOKEN)
-            _notify_client.messages.create(
-                from_=TWILIO_FROM,
-                to='whatsapp:+34690875940',
-                body=f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{_detalle}'
-            )
-        except Exception as _e:
-            print(f'Error notificando supervisor: {_e}')
+        notify_supervisors(
+            f'\u26a0\ufe0f *Revision herramienta - Incidencia*\n\nOperario: {_nom_rev}\nFecha: {_fecha_hoy}\n\nDetalle:\n{_detalle}'
+        )
         return str(resp) if not use_meta else ('OK', 200)
 
     elif paso_herr == 'herr_alta_nombre':
@@ -4731,16 +4722,8 @@ def subir_pdf_resumen_mes(pdf_bytes, rid):
 
 def finalizar_resumen_mes(numero, datos):
     """Guarda, genera PDF, envía por WhatsApp (URL) y por email con adjunto."""
-    import threading, traceback
+    import threading
     def _enviar():
-        try:
-            _enviar_inner()
-        except Exception as _e_outer:
-            err_msg = f"\u274c ERROR resumen_mes:\n{traceback.format_exc()[-500:]}"
-            print(err_msg)
-            try: enviar_whatsapp(SUPERVISOR_WA, err_msg)
-            except: pass
-    def _enviar_inner():
         rid = guardar_resumen_mes(datos, numero)
         nombre_op = datos.get('nombre_operario', nombre_operario(numero))
         mes = datos.get('mes','')
