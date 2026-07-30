@@ -1611,7 +1611,11 @@ def webhook():
         return str(resp)
 
     # Detectar arranque mantenimiento GE
-    if not (estado and str(estado.get('paso', '')).startswith('herr_')) and any(p in normalizar(incoming_msg) for p in MENSAJES_MANTTO):
+    _msg_inicio_ge = normalizar(incoming_msg)
+    _comando_ge = (_msg_inicio_ge in MENSAJES_MANTTO or
+                   _msg_inicio_ge.startswith('mantenimiento ') or
+                   _msg_inicio_ge.startswith('mantto '))
+    if not (estado and str(estado.get('paso', '')).startswith('herr_')) and _comando_ge:
         num_limpio_ge2 = numero.replace('whatsapp:','').replace('+','').strip()
         nombre_ge2 = OPERARIOS.get(num_limpio_ge2, '')
         if nombre_ge2:
