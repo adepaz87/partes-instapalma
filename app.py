@@ -1612,9 +1612,8 @@ def webhook():
 
     # Detectar arranque mantenimiento GE
     _msg_inicio_ge = normalizar(incoming_msg)
-    _comando_ge = (_msg_inicio_ge in MENSAJES_MANTTO or
-                   _msg_inicio_ge.startswith('mantenimiento ') or
-                   _msg_inicio_ge.startswith('mantto '))
+    # El mantenimiento GE solo se inicia con el comando exacto.
+    _comando_ge = (_msg_inicio_ge == 'mantenimiento ge')
     if not (estado and str(estado.get('paso', '')).startswith('herr_')) and _comando_ge:
         num_limpio_ge2 = numero.replace('whatsapp:','').replace('+','').strip()
         nombre_ge2 = OPERARIOS.get(num_limpio_ge2, '')
@@ -1627,7 +1626,7 @@ def webhook():
         return str(resp) if not use_meta else ('OK', 200)
 
     # Detectar arranque mantenimiento GE
-    if not (estado and str(estado.get('paso', '')).startswith('herr_')) and any(p in normalizar(incoming_msg) for p in MENSAJES_MANTENIMIENTO_GE):
+    if False and any(p in normalizar(incoming_msg) for p in MENSAJES_MANTENIMIENTO_GE):
         iniciar_mantenimiento_ge(numero)
         msg.body(
             "\U0001f527 *Mantenimiento GE \u2014 TBSA*\n\n"
