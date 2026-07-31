@@ -3994,6 +3994,19 @@ def admin_truncate_resumenes():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/delete-resumenes-alberto', methods=['POST'])
+def admin_delete_resumenes_alberto():
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""DELETE FROM resumen_mes
+            WHERE lower(trim(coalesce(nombre_operario, ''))) LIKE 'alberto%'
+               OR regexp_replace(coalesce(operario, ''), '[^0-9]', '', 'g') = '34690875940'""")
+        count = cur.rowcount
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'borrados': count}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/admin/truncate-vehiculos', methods=['POST'])
 def admin_truncate_vehiculos():
     try:
