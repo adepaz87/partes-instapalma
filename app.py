@@ -2184,8 +2184,11 @@ def webhook():
         )
         return str(resp) if not use_meta else ('OK', 200)
 
-    # Detectar solicitud de vacaciones
-    if any(p in normalizar(incoming_msg) for p in MENSAJES_VACACIONES):
+    # Detectar solicitud de vacaciones solo fuera de un resumen mensual activo.
+    # Dentro de las horas diarias, por ejemplo "15 vacaciones", es un registro
+    # del resumen y no debe arrancar el formulario de solicitud de vacaciones.
+    _paso_actual = str(estado.get('paso', '')) if estado else ''
+    if not _paso_actual.startswith('resumen_') and any(p in normalizar(incoming_msg) for p in MENSAJES_VACACIONES):
         iniciar_vacaciones(numero)
         # Ver si el número está registrado
         num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
@@ -2796,6 +2799,16 @@ def webhook():
             if not _linea:
                 continue
             try:
+                # Un día de vacaciones puede aparecer en el mismo listado diario:
+                # "15 vacaciones". No debe iniciar la solicitud de vacaciones.
+                _m_vac = _re_horas.match(r'^(\d{1,2})\s+vacaciones?$', _linea, _re_horas.I)
+                if _m_vac and _mes_num:
+                    _dia_vac = int(_m_vac.group(1))
+                    _lineas_horas.append({
+                        'fecha': f'{_dia_vac:02d}/{_mes_num:02d}/{_anio_num}',
+                        'obra': 'Vacaciones', 'horas': 0, 'tipo': 'vacaciones'
+                    })
+                    continue
                 if ';' in _linea:
                     _partes_h = [x.strip() for x in _linea.split(';')]
                     if len(_partes_h) != 3:
@@ -4747,9 +4760,10 @@ def generar_pdf_resumen_mes(datos):
         _filas_h = [['Fecha', 'Obra', 'Horas']]
         _total_h_pdf = 0
         for _h in _horas_diarias:
+            _es_vac = str(_h.get('tipo', '')).lower() == 'vacaciones' or normalizar(str(_h.get('obra', ''))) == 'vacaciones'
             _valor_h = float(_h.get('horas', 0))
             _total_h_pdf += _valor_h
-            _filas_h.append([str(_h.get('fecha', '')), str(_h.get('obra', '')), f'{_valor_h:g}'])
+            _filas_h.append([str(_h.get('fecha', '')), 'VACACIONES' if _es_vac else str(_h.get('obra', '')), '—' if _es_vac else f'{_valor_h:g}'])
         _filas_h.append(['', 'TOTAL HORAS', f'{_total_h_pdf:g}'])
         _th = Table(_filas_h, colWidths=[3.2*cm, 10.5*cm, 3.3*cm], repeatRows=1)
         _th.setStyle(TableStyle([
