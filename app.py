@@ -4143,9 +4143,62 @@ def migrate():
 
 @app.route('/tutorial')
 def tutorial():
-    return """<!doctype html><html lang='es'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Tutorial — Instapalma</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:0 auto;padding:24px;color:#1a3a5c;line-height:1.5}h1{border-bottom:3px solid #1a3a5c;padding-bottom:10px}h2{margin-top:28px;color:#1a3a5c}li{margin:8px 0}code,pre{background:#f1f4f7;padding:10px;border-radius:6px;display:block;white-space:pre-wrap} .box{background:#f1f4f7;padding:14px;border-radius:8px}</style></head><body><h1>📘 Tutorial Instapalma</h1><h2>Resumen fin de mes</h2><ol><li>Escribe <b>resumen mes</b>.</li><li>Indica tu nombre y el mes.</li><li>Introduce las horas totales diarias, una línea por día, separando con espacios:</li></ol><pre>1 Edificio Sabino 8h
+    return """<!doctype html>
+<html lang='es'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Tutorial del chat — Instapalma</title>
+<style>
+body{font-family:Arial,sans-serif;max-width:820px;margin:0 auto;padding:22px;color:#243447;line-height:1.55;background:#f7f9fb}
+main{background:#fff;padding:28px;border-radius:14px;box-shadow:0 2px 10px #d9e1e8}h1{color:#1a3a5c;margin-top:0;border-bottom:3px solid #1a3a5c;padding-bottom:12px}
+h2{color:#1a3a5c;margin-top:28px;border-bottom:1px solid #dbe3ea;padding-bottom:5px}h3{color:#315d80;margin-bottom:5px}
+pre,code{font-family:monospace;background:#eef3f7;border-radius:7px}pre{padding:13px;white-space:pre-wrap}code{padding:2px 5px}.box{background:#eef6fb;border-left:4px solid #1a6b9b;padding:12px 15px;border-radius:5px;margin:14px 0}.warning{background:#fff7e6;border-left:4px solid #e19a00;padding:12px 15px;border-radius:5px;margin:14px 0}li{margin:7px 0}.tag{display:inline-block;background:#1a3a5c;color:#fff;border-radius:12px;padding:3px 9px;font-size:12px;margin-right:5px}
+</style>
+</head>
+<body><main>
+<h1>📘 Tutorial del chat de Instapalma</h1>
+<p>Este chat sirve para enviar partes de trabajo, gestionar almacén y herramienta, pedir vacaciones y completar los resúmenes mensuales.</p>
+
+<h2>1. Cómo empezar</h2>
+<p>Escribe <code>hola</code>, <code>menú</code> o <code>ayuda</code>. También puedes escribir directamente el comando que necesites.</p>
+<div class='box'><b>Importante:</b> responde a cada pregunta del bot y no envíes la siguiente respuesta hasta que el bot la solicite.</div>
+
+<h2>2. Parte de trabajo</h2>
+<p>Escribe <code>parte</code>, <code>parte de trabajo</code> o <code>nuevo parte</code>. El bot te pedirá paso a paso:</p>
+<ol><li>Fecha del parte: <code>hoy</code> o formato <code>DD/MM/AAAA</code>.</li><li>Operario y cliente/obra.</li><li>Trabajos realizados y operarios participantes.</li><li>Materiales, albaranes y si el trabajo está terminado.</li><li>Revisión final: responde <b>SÍ</b> para enviarlo o <b>NO</b> para cancelarlo.</li></ol>
+
+<h2>3. Gestión de almacén</h2>
+<p>Escribe <code>almacén</code> o elige la opción 2 del menú:</p>
+<ul><li><b>Salida de almacén:</b> indica la obra y después cada material con su cantidad.</li><li><b>Devolución:</b> indica la obra de procedencia y los materiales que vuelven.</li><li><b>Consulta:</b> busca material o consulta el stock de herramienta.</li></ul>
+
+<h2>4. Herramienta</h2>
+<p>Escribe <code>herramienta</code> o elige la opción 3:</p>
+<ul><li><b>Alta en obra:</b> escribe el nombre de la herramienta y la obra.</li><li><b>Baja/devolución:</b> escribe la herramienta que devuelves y la obra.</li><li><b>Listados:</b> puedes pedir el listado del almacén, de la obra o por trabajador.</li><li><b>Revisión:</b> indica si todo está correcto o describe qué falta o está defectuoso.</li></ul>
+<div class='warning'>Si la herramienta se llama <b>Grupo electrógeno Honda</b>, escríbela dentro del menú de herramienta. El mantenimiento solo se inicia con el comando exacto <code>Mantenimiento GE</code>.</div>
+
+<h2>5. Vacaciones</h2>
+<p>Escribe <code>vacaciones</code>, <code>solicitar vacaciones</code> o <code>días libres</code>. Indica las fechas que te pida el bot y confirma la solicitud.</p>
+
+<h2>6. Resumen de fin de mes</h2>
+<p>Escribe <code>resumen mes</code>. Indica el mes y las horas totales trabajadas, una línea por día:</p>
+<pre>1 Edificio Sabino 8h
 2 Taller Chopo 9h
-3 Edificio Domingo 9h</pre><p>El primer número es el día, el texto central es la obra y el último valor son las horas. También puedes usar decimales, por ejemplo <b>7,5h</b>.</p><ol start='4'><li>Indica las horas extra.</li><li>Indica los días de vacaciones.</li><li>Indica el total de gastos.</li><li>Revisa y confirma el resumen.</li></ol><div class='box'>El PDF incluirá el detalle diario, el total de horas, horas extra, vacaciones y gastos.</div><h2>Menú del bot</h2><p>Escribe <b>hola</b>, <b>menú</b> o <b>ayuda</b> para ver las opciones disponibles.</p></body></html>"""
+3 Edificio Domingo 9h</pre>
+<p>Usa espacios entre el día, la obra y las horas. El último dato es siempre el número de horas. Se admiten decimales, por ejemplo <code>4 Obra Ejemplo 7,5h</code>. Después indica horas extra, vacaciones y gastos, revisa el resumen y responde <b>SÍ</b> para confirmarlo.</p>
+
+<h2>7. Vehículos</h2>
+<p>Escribe <code>vehículo</code> o <code>mantenimiento vehículo</code> y sigue las preguntas del bot.</p>
+
+<h2>8. Mantenimiento GE</h2>
+<p>Para iniciar este formulario escribe exactamente:</p>
+<pre>Mantenimiento GE</pre>
+<p>Después completa ubicación, marca, modelo, horas y las comprobaciones que solicite el bot.</p>
+
+<h2>Si te equivocas</h2>
+<p>Escribe <code>cancelar</code> cuando el bot te ofrezca cancelar. Para reiniciar completamente una conversación, escribe <code>reset</code> o <code>reiniciar</code>.</p>
+<div class='box'><b>Antes de confirmar:</b> revisa siempre la obra, las cantidades, las horas y la fecha. Si todo está correcto, responde <b>SÍ</b>.</div>
+</main></body></html>"""
 
 @app.route('/')
 def dashboard():
