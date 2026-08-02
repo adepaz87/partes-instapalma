@@ -225,6 +225,7 @@ OPERARIOS = {
     '34606544007': 'Adolfo Castro',
     '34650318811': 'Aythami Lorenzo',
     '34624828409': 'Luigi',
+    '34643007939': 'Junior',
 }
 
 def nombre_operario(numero):
