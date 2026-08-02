@@ -4264,13 +4264,13 @@ def dashboard():
         terminado = str(term or '').upper() in ('SÍ','SI','S','YES','TERMINADO','TRUE','1')
         badge = '<span style="background:#2e7d32;color:white;padding:2px 8px;border-radius:8px;font-size:11px">✓ Terminado</span>' if terminado else '<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">🔄 En curso</span>'
         fecha = cat.strftime('%d/%m %H:%M') if cat else '—'
-        filas_partes += f'<tr><td><b>{num or "—"}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td>{badge}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
+        filas_partes += f'<tr><td><b>{num or "—"}</b></td><td style="font-size:12px;color:#666">{nombre_operario(op) if op else "—"}</td><td>{obra or "—"}</td><td>{badge}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
 
     filas_herr = ''
     for h in herr_en_obra:
         nombre, op, obra, falta = h
         fecha = falta.strftime('%d/%m/%Y') if falta else '—'
-        filas_herr += f'<tr><td><b>{nombre}</b></td><td style="font-size:12px;color:#666">{op or "—"}</td><td>{obra or "—"}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
+        filas_herr += f'<tr><td><b>{nombre}</b></td><td style="font-size:12px;color:#666">{nombre_operario(op) if op else "—"}</td><td>{obra or "—"}</td><td style="font-size:12px;color:#888">{fecha}</td></tr>'
 
 
 
@@ -6335,7 +6335,7 @@ def web_herramienta():
         for i in items
     )
     filas_obra = "".join(
-        f"<tr><td>{o[1]}</td><td>{o[2] or ''}</td><td>{o[3]}</td><td>{str(o[4])[:10]}</td>"
+        f"<tr><td>{o[1]}</td><td>{nombre_operario(o[2]) if o[2] else ''}</td><td>{o[3]}</td><td>{str(o[4])[:10]}</td>"
         f"<td style='white-space:nowrap'><a href='/herramienta/editar_obra/{o[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/baja_obra/{o[0]}' onclick='return confirm(\"¿Confirmar baja?\")'>🔙 Baja</a></td></tr>"
         for o in en_obra
     )
