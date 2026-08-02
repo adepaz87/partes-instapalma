@@ -227,14 +227,18 @@ OPERARIOS = {
     '34624828409': 'Luigi',
     '34643007939': 'Junior',
     '34669198123': 'Adán Herrera',
+    '34606669060': 'Rafa Hernández Cortés',
+    '34618857256': 'Ricky',
+    '34618110100': 'Jorge Corujo',
+    '34639390172': 'Juan García',
+    '34657610595': 'Jonathan Rafael González Guarino',
+    '34636606175': 'Carlos Jonathan Rodríguez Luis',
 }
 
 def nombre_operario(numero):
-    """Devuelve 'Nombre (6XXXXXXXX)' a partir de un número WhatsApp."""
-    limpio = numero.replace('whatsapp:','').replace('+','').strip()
-    nombre = OPERARIOS.get(limpio, '')
-    corto  = limpio[2:] if limpio.startswith('34') else limpio
-    return f"{nombre} ({corto})" if nombre else corto
+    """Devuelve únicamente el nombre del operario, nunca su teléfono."""
+    limpio = str(numero or '').replace('whatsapp:','').replace('+','').strip()
+    return OPERARIOS.get(limpio, 'Operario no identificado')
 
 # ── Estado de conversaciones (persistido en DB) ────────────────────────────────
 def get_estado(numero):
@@ -1659,7 +1663,7 @@ def webhook():
     # ══════════════════════════════════════════════════════════════════════════
     msg_n_herr = normalizar(incoming_msg)
     num_limpio = numero.replace('whatsapp:','').replace('+','').strip()
-    nombre_op = OPERARIOS.get(num_limpio, numero)
+    nombre_op = nombre_operario(numero)
 
     BOT_URL_H = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
 
