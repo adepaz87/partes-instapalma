@@ -236,9 +236,20 @@ OPERARIOS = {
 }
 
 def nombre_operario(numero):
-    """Devuelve únicamente el nombre del operario, nunca su teléfono."""
-    limpio = str(numero or '').replace('whatsapp:','').replace('+','').strip()
-    return OPERARIOS.get(limpio, 'Operario no identificado')
+    """Devuelve únicamente el nombre del operario, nunca su teléfono.
+
+    Algunas filas antiguas de herramienta guardan directamente el nombre,
+    mientras que otras guardan el número. Aceptamos ambos formatos para que
+    el dashboard no convierta un nombre válido en «Operario no identificado».
+    """
+    original = str(numero or '').strip()
+    limpio = original.replace('whatsapp:', '').replace('+', '').strip()
+    if limpio in OPERARIOS:
+        return OPERARIOS[limpio]
+    # Compatibilidad con registros que ya contienen el nombre.
+    if any(c.isalpha() for c in original):
+        return original
+    return 'Operario no identificado'
 
 # ── Estado de conversaciones (persistido en DB) ────────────────────────────────
 def get_estado(numero):
