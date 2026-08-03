@@ -1091,7 +1091,7 @@ def aprobar_rechazar_vacacion(vac_id, estado):
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("UPDATE vacaciones SET estado=%s WHERE id=%s RETURNING operario, nombre_operario, fecha_inicio, fecha_fin, dias_solicitados", (estado, vac_id))
+        cur.execute("UPDATE vacaciones SET estado=%s WHERE id=%s AND estado='pendiente' RETURNING operario, nombre_operario, fecha_inicio, fecha_fin, dias_solicitados", (estado, vac_id))
         row = cur.fetchone()
         if row and estado == 'aprobada':
             # Descontar días del saldo
@@ -1617,6 +1617,34 @@ def webhook():
         borrar_estado(numero)
         msg.body("🔄 Conversación reiniciada. Escribe *parte* para comenzar de nuevo.")
         return str(resp)
+
+    # Gestión prioritaria de aprobación por Alberto. Debe ejecutarse antes de
+    # cualquier flujo activo (herramienta, vehículos, etc.).
+    _numero_aprobador = numero.replace('whatsapp:', '').replace('+', '').strip()
+    if _numero_aprobador == '34690875940':
+        import re as _re_apr
+        _m_apr = _re_apr.match(r'^(aprobar|rechazar)\s+(\d+)$', normalizar(incoming_msg))
+        if _m_apr:
+            _accion_apr = _m_apr.group(1)
+            _vac_id_apr = int(_m_apr.group(2))
+            _estado_apr = 'aprobada' if _accion_apr == 'aprobar' else 'rechazada'
+            _row_apr = aprobar_rechazar_vacacion(_vac_id_apr, _estado_apr)
+            if _row_apr:
+                _op_num, _op_nombre_bd, _fi, _ff, _dias = _row_apr
+                _op_nombre = _op_nombre_bd or nombre_operario(_op_num)
+                _op_wa = _op_num if _op_num.startswith('whatsapp:') else f'whatsapp:{_op_num}'
+                _num_op_limpio = _op_num.replace('whatsapp:', '').replace('+', '').strip()
+                if _estado_apr == 'aprobada':
+                    _saldo_apr = get_saldo_vacaciones(_num_op_limpio)
+                    _saldo_txt_apr = f"\n📊 Te quedan *{_saldo_apr[0] - _saldo_apr[1]}* días de vacaciones." if _saldo_apr else ''
+                    enviar_whatsapp(_op_wa, f"✅ *Vacaciones aprobadas*\nTus vacaciones del {_fi} al {_ff} ({_dias} días) han sido aprobadas por Alberto. ¡Disfrútalas! 🌴{_saldo_txt_apr}")
+                    msg.body(f"✅ Vacaciones de {_op_nombre} ({_fi} – {_ff}, {_dias} días) aprobadas.")
+                else:
+                    enviar_whatsapp(_op_wa, f"❌ *Vacaciones no aprobadas*\nTu solicitud del {_fi} al {_ff} no ha sido aprobada. Contacta con Alberto.")
+                    msg.body(f"❌ Vacaciones de {_op_nombre} rechazadas. El operario ha sido notificado.")
+            else:
+                msg.body(f"No encontré una solicitud pendiente #{_vac_id_apr}. Verifica el número.")
+            return str(resp) if not use_meta else ('OK', 200)
 
     # Detectar arranque mantenimiento GE
     _msg_inicio_ge = normalizar(incoming_msg)
@@ -2218,33 +2246,6 @@ def webhook():
                 "Para continuar, ¿cuál es tu *nombre completo*?"
             )
         return str(resp) if not use_meta else ('OK', 200)
-
-    # Gestión de aprobación por Alberto (APROBAR/RECHAZAR ID)
-    if numero in [SUPERVISOR_WA, 'whatsapp:+34690875940']:
-        msg_norm = normalizar(incoming_msg)
-        import re as _re
-        m = _re.match(r'^(aprobar|rechazar)\s+(\d+)$', msg_norm)
-        if m:
-            accion = m.group(1)
-            vac_id = int(m.group(2))
-            estado_nuevo = 'aprobada' if accion == 'aprobar' else 'rechazada'
-            row = aprobar_rechazar_vacacion(vac_id, estado_nuevo)
-            if row:
-                op_num, op_nombre_bd, fi, ff, dias = row
-                op_nombre = op_nombre_bd or nombre_operario(op_num)
-                op_wa = op_num if op_num.startswith('whatsapp:') else f"whatsapp:{op_num}"
-                num_limpio = op_num.replace('whatsapp:','').replace('+','').strip()
-                saldo = get_saldo_vacaciones(num_limpio)
-                if estado_nuevo == 'aprobada':
-                    saldo_txt = f"\n📊 Te quedan *{saldo[0] - saldo[1]}* días de vacaciones." if saldo else ""
-                    enviar_whatsapp(op_wa, f"✅ *Vacaciones aprobadas*\nTus vacaciones del {fi} al {ff} ({dias} días) han sido aprobadas por Alberto. ¡Disfrútalas! 🌴{saldo_txt}")
-                    msg.body(f"✅ Vacaciones de {op_nombre} ({fi} – {ff}, {dias} días) aprobadas.")
-                else:
-                    enviar_whatsapp(op_wa, f"❌ *Vacaciones no aprobadas*\nTu solicitud del {fi} al {ff} no ha sido aprobada. Contacta con Alberto.")
-                    msg.body(f"❌ Vacaciones de {op_nombre} rechazadas. El operario ha sido notificado.")
-            else:
-                msg.body(f"No encontré la solicitud #{vac_id}. Verifica el número.")
-            return str(resp) if not use_meta else ('OK', 200)
 
     # ── Menú principal: "hola" ────────────────────────────────────────────────
     if normalizar(incoming_msg).strip() in MENSAJES_HOLA:
