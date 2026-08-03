@@ -4067,6 +4067,46 @@ def admin_herr_debug():
     except Exception as e:
         return {'error': str(e)}, 500
 
+@app.route('/admin/unificar-herramienta', methods=['POST'])
+def admin_unificar_herramienta():
+    """Fusiona dos nombres de herramienta conservando stock e historial."""
+    conn = None
+    try:
+        datos = request.get_json(silent=True) or {}
+        origen = (datos.get('origen') or '').strip()
+        destino = (datos.get('destino') or '').strip()
+        if not origen or not destino or origen.lower() == destino.lower():
+            return {'error': 'Indica origen y destino diferentes'}, 400
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT id, nombre, stock_almacen FROM herramienta WHERE LOWER(nombre)=LOWER(%s)', (origen,))
+        src = cur.fetchone()
+        cur.execute('SELECT id, nombre, stock_almacen FROM herramienta WHERE LOWER(nombre)=LOWER(%s)', (destino,))
+        dst = cur.fetchone()
+        if not src or not dst:
+            conn.rollback(); cur.close(); conn.close()
+            return {'error': 'No se encontró el elemento de origen o destino', 'origen': bool(src), 'destino': bool(dst)}, 404
+        src_id, src_name, src_stock = src
+        dst_id, dst_name, dst_stock = dst
+        # Reasignar también las unidades históricas/en obra antes de borrar el origen.
+        cur.execute('''UPDATE herramienta_obra
+                       SET herramienta_id=%s, herramienta_nombre=%s
+                       WHERE herramienta_id=%s''', (dst_id, dst_name, src_id))
+        movidas = cur.rowcount
+        cur.execute('''UPDATE herramienta_personal
+                       SET articulo=%s
+                       WHERE LOWER(articulo)=LOWER(%s)''', (dst_name, src_name))
+        cur.execute('''UPDATE herramienta
+                       SET stock_almacen=%s, updated_at=NOW()
+                       WHERE id=%s''', ((dst_stock or 0) + (src_stock or 0), dst_id))
+        cur.execute('DELETE FROM herramienta WHERE id=%s', (src_id,))
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'destino': dst_name, 'stock_almacen': (dst_stock or 0) + (src_stock or 0), 'asignaciones_unificadas': movidas}, 200
+    except Exception as e:
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+        return {'error': str(e)}, 500
+
 @app.route('/admin/albaranes-lista', methods=['GET'])
 def admin_albaranes_lista():
     try:
