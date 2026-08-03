@@ -4107,6 +4107,39 @@ def admin_unificar_herramienta():
             except Exception: pass
         return {'error': str(e)}, 500
 
+@app.route('/admin/eliminar-herramienta', methods=['POST'])
+def admin_eliminar_herramienta():
+    """Elimina un elemento del inventario, conservando su historial de obra."""
+    conn = None
+    try:
+        datos = request.get_json(silent=True) or {}
+        nombre = (datos.get('nombre') or '').strip()
+        if not nombre:
+            return {'error': 'Falta el nombre'}, 400
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT id FROM herramienta WHERE LOWER(nombre)=LOWER(%s)', (nombre,))
+        row = cur.fetchone()
+        if not row:
+            conn.rollback(); cur.close(); conn.close()
+            return {'status': 'not_found', 'nombre': nombre}, 404
+        hid = row[0]
+        cur.execute('SELECT COUNT(*) FROM herramienta_obra WHERE herramienta_id=%s AND activo=TRUE', (hid,))
+        activas = cur.fetchone()[0]
+        if activas:
+            conn.rollback(); cur.close(); conn.close()
+            return {'error': 'Tiene unidades activas en obra', 'activas': activas}, 409
+        # El historial se conserva, pero sin referencia a un elemento eliminado.
+        cur.execute('UPDATE herramienta_obra SET herramienta_id=NULL WHERE herramienta_id=%s', (hid,))
+        historicas = cur.rowcount
+        cur.execute('DELETE FROM herramienta WHERE id=%s', (hid,))
+        conn.commit(); cur.close(); conn.close()
+        return {'status': 'ok', 'eliminado': nombre, 'registros_historicos_conservados': historicas}, 200
+    except Exception as e:
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+        return {'error': str(e)}, 500
+
 @app.route('/admin/albaranes-lista', methods=['GET'])
 def admin_albaranes_lista():
     try:
