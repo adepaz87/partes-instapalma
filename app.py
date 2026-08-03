@@ -6760,7 +6760,7 @@ def web_revisiones():
         tc = 'ok' if r[3]=='ok' else 'inc'
         tt = 'OK' if r[3]=='ok' else 'Incidencia'
         o  = r[4] or '-'
-        return '<tr><td>%s</td><td>%s</td><td><span class="tag tag-%s">%s</span></td><td>%s</td><td><a href="/herramienta/revisiones/editar/%s">&#9999;</a> <a href="/herramienta/revisiones/borrar/%s" onclick="return confirm(\'Eliminar?\')">&#128465;</a></td></tr>' % (r[1], r[2], tc, tt, o, r[0], r[0])
+        return '<tr><td>%s</td><td>%s</td><td><span class="tag tag-%s">%s</span></td><td>%s</td><td><a href="/herramienta/revisiones/editar/%s">&#9999;</a> <a href="/herramienta/revisiones/borrar/%s" onclick="return confirm(\'Eliminar?\')">&#128465;</a></td></tr>' % (r[1], nombre_operario(r[2]), tc, tt, o, r[0], r[0])
     filas = ''.join(_row(r) for r in revs)
     empty = '<tr><td colspan="5" style="text-align:center;color:#999">Sin revisiones registradas</td></tr>'
     css = CSS_BASE
