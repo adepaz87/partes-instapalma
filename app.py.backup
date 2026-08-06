@@ -26,11 +26,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
-from ots_handlers import *
-from ots_routes import ots_bp
 app = Flask(__name__)
-
-app.register_blueprint(ots_bp)
 
 def fmt_cant(v):
     """Formatea cantidad con coma decimal y 2 decimales. Ej: 2.0 → '2,00'"""
@@ -147,31 +143,6 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
-
-        # OTs — TBSA (Órdenes de Trabajo)
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS ots (
-                id SERIAL PRIMARY KEY,
-                numero_ot VARCHAR(50) UNIQUE NOT NULL,
-                centro VARCHAR(100),
-                averia TEXT,
-                prioridad VARCHAR(20) DEFAULT 'normal',
-                fecha_recibida VARCHAR(20),
-                fecha_limite VARCHAR(20),
-                observaciones TEXT,
-                estado VARCHAR(20) DEFAULT 'pendiente',
-                operario_asignado VARCHAR(100),
-                fecha_asignacion TIMESTAMP,
-                fecha_resolucion TIMESTAMP,
-                respuesta_operario TEXT,
-                fotos_urls TEXT,
-                origen VARCHAR(20) DEFAULT 'email',
-                email_origen VARCHAR(100),
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
-            )
-        """)
-
         # Migraciones de columnas
         try:
             cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_inicio TYPE VARCHAR(50)")
@@ -1725,47 +1696,6 @@ def webhook():
             "1️⃣ ¿Cuál es la *matrícula* del vehículo?"
         )
         return str(resp) if not use_meta else ('OK', 200)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # OTs — TBSA (Órdenes de Trabajo)
-    # ══════════════════════════════════════════════════════════════════════════
-    _msg_ot = normalizar(incoming_msg)
-    
-    # Comando: OT <numero> (consultar)
-    _m_ot_consulta = re.match(r'^ot\s+([a-z0-9\-]+)$', _msg_ot)
-    if _m_ot_consulta and not re.match(r'^ot\s+\w+\s+', _msg_ot):
-        _numero_ot = _m_ot_consulta.group(1).upper()
-        handle_ot_consulta(_numero_ot, numero, resp, msg, use_meta, enviar_whatsapp, OPERARIOS)
-        return str(resp) if not use_meta else ('OK', 200)
-    
-    # Comando: OT <numero> <operario> (asignar) o asignar OT <numero> a <operario>
-    _m_ot_asign = re.match(r'^ot\s+([a-z0-9\-]+)\s+(.+)$', _msg_ot)
-    _m_ot_asign2 = re.match(r'^asignar\s+ot\s+([a-z0-9\-]+)\s+a\s+(.+)$', _msg_ot)
-    if _m_ot_asign or _m_ot_asign2:
-        _match = _m_ot_asign or _m_ot_asign2
-        _numero_ot = _match.group(1).upper()
-        _nombre_operario = _match.group(2).strip()
-        # Verificar que no sea "resuelta"
-        if not _nombre_operario.lower() == 'resuelta':
-            handle_ot_asignar(_numero_ot, _nombre_operario, numero, resp, msg, use_meta, enviar_whatsapp, OPERARIOS, SUPERVISOR_WA)
-            return str(resp) if not use_meta else ('OK', 200)
-    
-    # Comando: listar OT / OT lista
-    if _msg_ot in ['listar ot', 'ot lista', 'ot', 'ots']:
-        handle_ot_listar(numero, resp, msg, use_meta, enviar_whatsapp)
-        return str(resp) if not use_meta else ('OK', 200)
-    
-    # Comando: OT <numero> resuelta <observaciones>
-    _m_ot_resuelva = re.match(r'^ot\s+([a-z0-9\-]+)\s+resuelta(?:\s+(.+))?$', _msg_ot)
-    if _m_ot_resuelva:
-        _numero_ot = _m_ot_resuelva.group(1).upper()
-        _observaciones = _m_ot_resuelva.group(2) or ''
-        _fotos_url = media_url if media_url else ''
-        handle_ot_resolver(_numero_ot, _observaciones, _fotos_url, numero, resp, msg, use_meta, 
-                          enviar_whatsapp, OPERARIOS, SUPERVISOR_WA, GMAIL_USER, GMAIL_APP_PASSWORD)
-        return str(resp) if not use_meta else ('OK', 200)
-
-
 
     # ══════════════════════════════════════════════════════════════════════════
     # HERRAMIENTA — Flujo conversacional
