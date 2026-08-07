@@ -1775,6 +1775,13 @@ def webhook():
                 msg.body(f"No encontré una solicitud pendiente #{_vac_id_apr}. Verifica el número.")
             return str(resp) if not use_meta else ('OK', 200)
 
+    # El número 8 debe abrir las OTs aunque el estado del menú se haya perdido
+    # (puede ocurrir si el primer mensaje llegó por otro proveedor o durante
+    # un reinicio del proceso). No depender únicamente de menu_principal.
+    if normalizar(incoming_msg).strip() == '8':
+        if gestionar_ot_whatsapp(numero, 'ots', msg):
+            return str(resp) if not use_meta else ('OK', 200)
+
     # Gestión de OTs TBSA desde el bot.
     if gestionar_ot_whatsapp(numero, incoming_msg, msg):
         return str(resp) if not use_meta else ('OK', 200)
