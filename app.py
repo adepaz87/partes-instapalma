@@ -1777,8 +1777,10 @@ def webhook():
 
     # El número 8 debe abrir las OTs aunque el estado del menú se haya perdido
     # (puede ocurrir si el primer mensaje llegó por otro proveedor o durante
-    # un reinicio del proceso). No depender únicamente de menu_principal.
-    if normalizar(incoming_msg).strip() == '8':
+    # un reinicio del proceso). WhatsApp puede enviar el número como tecla
+    # emoji (8️⃣), por eso quitamos los selectores Unicode antes de comparar.
+    _opcion_ot_directa = normalizar(incoming_msg).strip().replace('\ufe0f', '').replace('\u20e3', '')
+    if _opcion_ot_directa == '8':
         if gestionar_ot_whatsapp(numero, 'ots', msg):
             return str(resp) if not use_meta else ('OK', 200)
 
