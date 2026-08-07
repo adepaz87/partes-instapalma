@@ -26,11 +26,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 
-from ots_handlers import *
-from ots_routes import ots_bp
 app = Flask(__name__)
-
-app.register_blueprint(ots_bp)
 
 def fmt_cant(v):
     """Formatea cantidad con coma decimal y 2 decimales. Ej: 2.0 → '2,00'"""
@@ -147,31 +143,43 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
-
-        # OTs — TBSA (Órdenes de Trabajo)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS ots (
-                id SERIAL PRIMARY KEY,
-                numero_ot VARCHAR(50) UNIQUE NOT NULL,
-                centro VARCHAR(100),
-                averia TEXT,
-                prioridad VARCHAR(20) DEFAULT 'normal',
-                fecha_recibida VARCHAR(20),
-                fecha_limite VARCHAR(20),
-                observaciones TEXT,
-                estado VARCHAR(20) DEFAULT 'pendiente',
-                operario_asignado VARCHAR(100),
-                fecha_asignacion TIMESTAMP,
-                fecha_resolucion TIMESTAMP,
-                respuesta_operario TEXT,
-                fotos_urls TEXT,
-                origen VARCHAR(20) DEFAULT 'email',
-                email_origen VARCHAR(100),
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
+            CREATE TABLE IF NOT EXISTS ots_tbsa (
+                id SERIAL PRIMARY KEY, numero INTEGER UNIQUE NOT NULL,
+                centro TEXT NOT NULL DEFAULT '', averia TEXT NOT NULL DEFAULT '',
+                prioridad VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+                estado VARCHAR(30) NOT NULL DEFAULT 'pendiente',
+                asignado_numero VARCHAR(50), asignado_nombre VARCHAR(100),
+                fecha_limite VARCHAR(50), observaciones TEXT,
+                created_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW(),
+                resuelta_at TIMESTAMP
             )
         """)
-
+        ots_iniciales = [
+            (3,'SPAR Triana','Tapar canaletas en cuarto grupo electrógeno','pendiente'),
+            (6,'SPAR El Paso','Grupo electrógeno tarda en arrancar — bomba gasoil','pendiente'),
+            (19,'SPAR Tagomago — Los Llanos de Aridane','Varias luminarias no encienden — coordinar con Fernando','pendiente'),
+            (20,'TBSA — Breña Baja (Central Logística y Oficinas)','Instalación de tomas de corriente en zona PREVENTAS','pendiente'),
+            (21,'TBSA — Local San Pedro','Dar de alta luz con la mínima potencia necesaria','pendiente'),
+            (27,'TBSA — Breña Baja (Central Logística y Oficinas)','Batería de condensadores de la central en peligro','pendiente'),
+            (29,'TBSA — Breña Baja (Central Logística y Oficinas)','Daño del equipo de fichar por apagones','pendiente'),
+            (30,'TBSA — Breña Baja (Central Logística y Oficinas)','Fallo en luminaria de emergencia en zona de carga','pendiente'),
+            (31,'SPAR El Paso','Luminaria fundida en zona de cajas','pendiente'),
+            (32,'SPAR Triana — Los Llanos de Aridane','Luminaria fundida en zona de charcutería','pendiente'),
+            (34,'SPAR Sauces','Avería en alumbrado exterior','pendiente'),
+            (35,'SPAR Salinas','Fallo en cuadro eléctrico — disyuntor disparado','pendiente'),
+            (36,'SPAR El Muelle','Luminaria parpadeando en zona de frescos','pendiente'),
+            (37,'TBSA — Breña Baja (Central Logística y Oficinas)','Grupo electrógeno central — corte pendiente de coordinar','urgente'),
+            (40,'TBSA — Breña Baja (Central Logística y Oficinas)','Revisión general tras apagones','pendiente'),
+            (41,'SPAR Tagomago — Los Llanos de Aridane','Fallo de iluminación en zona de entrada','pendiente'),
+            (50,'SPAR Triana — Los Llanos de Aridane','Colocación de exterminadores en zona queso, carnicería y cafetería','pendiente'),
+            (56,'SPAR El Paso','Grupo eléctrico desconectado; subir automático y reconectar cuanto antes','pendiente'),
+        ]
+        for _ot in ots_iniciales:
+            cur.execute("""
+                INSERT INTO ots_tbsa (numero, centro, averia, prioridad)
+                VALUES (%s,%s,%s,%s) ON CONFLICT (numero) DO NOTHING
+            """, _ot)
         # Migraciones de columnas
         try:
             cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_inicio TYPE VARCHAR(50)")
@@ -261,6 +269,7 @@ OPERARIOS = {
     '34618110100': 'Jorge Corujo',
     '34639390172': 'Juan García',
     '34657610595': 'Jonathan Rafael González Guarino',
+    '34636800150': 'Goyo Hernández',
     '34636606175': 'Carlos Jonathan Rodríguez Luis',
 }
 
@@ -350,6 +359,86 @@ def iniciar_parte(numero):
         print(f"Error iniciar_parte: {e}")
 
 
+# ── Gestión de OTs TBSA desde WhatsApp ────────────────────────────────────────
+# Se genera desde el directorio completo del bot, no desde una lista cerrada de tres personas.
+OT_OPERARIOS = {}
+for _phone, _name in OPERARIOS.items():
+    if _phone == '34690875940':  # Alberto no aparece como operario asignable.
+        continue
+    OT_OPERARIOS[_name.lower()] = (_name, _phone)
+    OT_OPERARIOS.setdefault(_name.split()[0].lower(), (_name, _phone))
+# Alias habituales y nombres con los que se identifica el equipo.
+OT_OPERARIOS.update({
+    'tono': ('Toño Guardia', '34616233640'),
+    'toño': ('Toño Guardia', '34616233640'),
+    'goyo': ('Goyo Hernández', '34636800150'),
+    'jonathan': ('Carlos Jonathan Rodríguez Luis', '34636606175'),
+})
+def _ot_clean(n): return n.replace('whatsapp:','').replace('+','').strip()
+def _ot_supervisor(n): return _ot_clean(n) == '34690875940'
+def _ot_row(num):
+    c=get_db(); q=c.cursor(); q.execute("""SELECT numero,centro,averia,prioridad,estado,COALESCE(asignado_nombre,'Sin asignar'),fecha_limite,COALESCE(observaciones,'') FROM ots_tbsa WHERE numero=%s""",(num,)); r=q.fetchone(); q.close(); c.close(); return r
+def _ot_line(r):
+    icon='🚨' if r[3]=='urgente' else ('✅' if r[4]=='resuelta' else '⏳')
+    return f"{icon} *OT {r[0]}* — {r[1]}\n{r[2]}\n👷 {r[5]}"
+def _ot_list():
+    c=get_db(); q=c.cursor(); q.execute("""SELECT numero,centro,averia,prioridad,estado,COALESCE(asignado_nombre,'Sin asignar'),fecha_limite,COALESCE(observaciones,'') FROM ots_tbsa WHERE estado<>'resuelta' ORDER BY CASE WHEN prioridad='urgente' THEN 0 ELSE 1 END,numero"""); rows=q.fetchall(); q.close(); c.close(); return rows
+def _ot_mail_done(num,center,job,worker,notes):
+    try:
+        e=MIMEMultipart(); e['From']=GMAIL_USER; e['To']='rbarrera@tomasbarretosa.com, fconcepcion@tomasbarretosa.com'; e['Subject']=f'OT {num} resuelta — {center}'
+        e.attach(MIMEText(f'OT {num} resuelta.\n\nCentro: {center}\nTrabajo: {job}\nOperario: {worker}\nObservaciones: {notes or "Ninguna"}\n\nINSTAPALMA OBRAS Y SERVICIOS SLU','plain','utf-8'))
+        with smtplib.SMTP_SSL('smtp.gmail.com',465) as srv: srv.login(GMAIL_USER,GMAIL_APP_PASSWORD); srv.sendmail(GMAIL_USER,['rbarrera@tomasbarretosa.com','fconcepcion@tomasbarretosa.com'],e.as_string())
+    except Exception as exc: print(f'Error email OT {num}: {exc}')
+def gestionar_ot_whatsapp(numero,texto,msg):
+    import re
+    t=normalizar(texto)
+    if not (re.search(r'\bots?\b',t) or 'orden de trabajo' in t or 'ordenes de trabajo' in t): return False
+    sup=_ot_supervisor(numero)
+    if t in ('ot','ots','ot tbsa','ots tbsa','ordenes','órdenes','ordenes tbsa','órdenes tbsa','ot pendientes'):
+        if sup:
+            rows=_ot_list(); msg.body('📋 *OTs TBSA pendientes*\n\n'+'\n\n'.join(_ot_line(r) for r in rows)+'\n\n_Comandos: OT número · OT número Toño · OT número resuelta_')
+        else: msg.body('🔧 *Gestión de OTs TBSA*\n\nCuando termines responde: *OT número resuelta*\nEjemplo: *OT 56 resuelta*')
+        return True
+    # Formas naturales de alta/asignación usadas por Alberto.
+    m_alta=re.match(r'^(?:alta|nueva)\s+ot\s+(\d+)\s*\|\s*(.+?)\s*\|\s*(.+)$',t,re.I)
+    if sup and m_alta:
+        num=int(m_alta.group(1)); center=m_alta.group(2).strip(); job=m_alta.group(3).strip()
+        c=get_db(); q=c.cursor(); q.execute("""INSERT INTO ots_tbsa(numero,centro,averia) VALUES(%s,%s,%s) ON CONFLICT(numero) DO UPDATE SET centro=%s,averia=%s,updated_at=NOW()""", (num,center,job,center,job)); c.commit(); q.close(); c.close()
+        msg.body(f'✅ OT {num} registrada.'); return True
+    m_asig=re.match(r'^asignar\s+ot\s+(\d+)\s+(?:a\s+)?(.+)$',t,re.I)
+    if sup and m_asig:
+        num=int(m_asig.group(1)); action=m_asig.group(2).strip()
+    else:
+        m=re.match(r'^(?:ot|orden)\s*(\d+)\s*(.*)$',t,re.I)
+        if not m: return False
+        num=int(m.group(1)); action=m.group(2).strip()
+    row=_ot_row(num)
+    # Alta alternativa: OT 57 alta | centro | avería
+    if sup and action.startswith(('alta ','nueva ')):
+        parts=[x.strip() for x in re.split(r'\s*\|\s*',action,maxsplit=2)]
+        if len(parts)<3: msg.body('Formato: *alta OT número | centro | avería*'); return True
+        c=get_db(); q=c.cursor(); q.execute("""INSERT INTO ots_tbsa(numero,centro,averia) VALUES(%s,%s,%s) ON CONFLICT(numero) DO UPDATE SET centro=%s,averia=%s,updated_at=NOW()""",(num,parts[1],parts[2],parts[1],parts[2])); c.commit(); q.close(); c.close(); msg.body(f'✅ OT {num} registrada.'); return True
+    # Asignación: OT 56 Toño / OT 56 asignar a Toño
+    if sup:
+        who=re.sub(r'^asignar\s*(?:a)?\s*','',action).strip(); op=OT_OPERARIOS.get(who)
+        if op:
+            if not row: msg.body(f'No encuentro la OT {num}.'); return True
+            name,phone=op; c=get_db(); q=c.cursor(); q.execute("""UPDATE ots_tbsa SET asignado_numero=%s,asignado_nombre=%s,estado=CASE WHEN estado='resuelta' THEN estado ELSE 'asignada' END,updated_at=NOW() WHERE numero=%s""",(phone,name,num)); c.commit(); q.close(); c.close()
+            enviar_whatsapp('whatsapp:+'+phone,f'🔧 *OT {num} asignada*\n\nCentro: {row[1]}\nTrabajo: {row[2]}\n\nCuando termines responde: *OT {num} resuelta*')
+            msg.body(f'✅ OT {num} asignada a {name}.'); return True
+    # Resolución por supervisor u operario conocido
+    if any(x in action for x in ('resuelta','resuelto','hecha','hecho','terminada','terminado','cerrar')):
+        if not row: msg.body(f'No encuentro la OT {num}.'); return True
+        if not sup and _ot_clean(numero) not in ('34616233640','34636800150','34636606175','34666123020'):
+            msg.body('Este número no está autorizado para cerrar OTs TBSA.'); return True
+        notes=re.sub(r'^(?:resuelta|resuelto|hecha|hecho|terminada|terminado|cerrar)\s*','',action).strip(); worker=OPERARIOS.get(_ot_clean(numero),'Alberto' if sup else numero)
+        c=get_db(); q=c.cursor(); q.execute("""UPDATE ots_tbsa SET estado='resuelta',asignado_numero=COALESCE(asignado_numero,%s),asignado_nombre=COALESCE(asignado_nombre,%s),observaciones=%s,updated_at=NOW(),resuelta_at=NOW() WHERE numero=%s""",(_ot_clean(numero),worker,notes,num)); c.commit(); q.close(); c.close()
+        _ot_mail_done(num,row[1],row[2],worker,notes); enviar_whatsapp(SUPERVISOR_WA,f'✅ OT {num} resuelta\nCentro: {row[1]}\nOperario: {worker}')
+        msg.body('✅ OT registrada como resuelta y notificada a TBSA.'); return True
+    if not action or action in ('ver','consulta','detalle'):
+        msg.body(_ot_line(row) if row else f'No encuentro la OT {num}.'); return True
+    msg.body('Usa: *OT número*, *OT número Toño* u *OT número resuelta*.'); return True
+
 MENSAJES_INICIO = ['parte', 'parte de trabajo', 'nuevo parte', 'abrir parte', 'crear parte']
 MENSAJES_HOLA   = ['hola', 'menu', 'menú', 'inicio', 'ayuda']
 
@@ -361,9 +450,9 @@ MENU_PRINCIPAL = (
     "3️⃣ Herramienta\n"
     "4️⃣ Vacaciones\n"
     "5️⃣ Resumen fin de mes\n"
-    "   _Horas diarias: día obra horas (ej. 1 Edificio Sabino 8h)_\n"
     "6️⃣ Vehículos\n"
-    "7️⃣ Mantenimiento GE (TBSA)\n\n"
+    "7️⃣ Mantenimiento GE (TBSA)\n"
+    "8️⃣ Órdenes de trabajo TBSA\n\n"
     "_Escribe el número o la palabra clave directamente_"
 )
 
@@ -1686,6 +1775,10 @@ def webhook():
                 msg.body(f"No encontré una solicitud pendiente #{_vac_id_apr}. Verifica el número.")
             return str(resp) if not use_meta else ('OK', 200)
 
+    # Gestión de OTs TBSA desde el bot.
+    if gestionar_ot_whatsapp(numero, incoming_msg, msg):
+        return str(resp) if not use_meta else ('OK', 200)
+
     # Detectar arranque mantenimiento GE
     _msg_inicio_ge = normalizar(incoming_msg)
     # El mantenimiento GE solo se inicia con el comando exacto.
@@ -1725,47 +1818,6 @@ def webhook():
             "1️⃣ ¿Cuál es la *matrícula* del vehículo?"
         )
         return str(resp) if not use_meta else ('OK', 200)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # OTs — TBSA (Órdenes de Trabajo)
-    # ══════════════════════════════════════════════════════════════════════════
-    _msg_ot = normalizar(incoming_msg)
-    
-    # Comando: OT <numero> (consultar)
-    _m_ot_consulta = re.match(r'^ot\s+([a-z0-9\-]+)$', _msg_ot)
-    if _m_ot_consulta and not re.match(r'^ot\s+\w+\s+', _msg_ot):
-        _numero_ot = _m_ot_consulta.group(1).upper()
-        handle_ot_consulta(_numero_ot, numero, resp, msg, use_meta, enviar_whatsapp, OPERARIOS)
-        return str(resp) if not use_meta else ('OK', 200)
-    
-    # Comando: OT <numero> <operario> (asignar) o asignar OT <numero> a <operario>
-    _m_ot_asign = re.match(r'^ot\s+([a-z0-9\-]+)\s+(.+)$', _msg_ot)
-    _m_ot_asign2 = re.match(r'^asignar\s+ot\s+([a-z0-9\-]+)\s+a\s+(.+)$', _msg_ot)
-    if _m_ot_asign or _m_ot_asign2:
-        _match = _m_ot_asign or _m_ot_asign2
-        _numero_ot = _match.group(1).upper()
-        _nombre_operario = _match.group(2).strip()
-        # Verificar que no sea "resuelta"
-        if not _nombre_operario.lower() == 'resuelta':
-            handle_ot_asignar(_numero_ot, _nombre_operario, numero, resp, msg, use_meta, enviar_whatsapp, OPERARIOS, SUPERVISOR_WA)
-            return str(resp) if not use_meta else ('OK', 200)
-    
-    # Comando: listar OT / OT lista
-    if _msg_ot in ['listar ot', 'ot lista', 'ot', 'ots']:
-        handle_ot_listar(numero, resp, msg, use_meta, enviar_whatsapp)
-        return str(resp) if not use_meta else ('OK', 200)
-    
-    # Comando: OT <numero> resuelta <observaciones>
-    _m_ot_resuelva = re.match(r'^ot\s+([a-z0-9\-]+)\s+resuelta(?:\s+(.+))?$', _msg_ot)
-    if _m_ot_resuelva:
-        _numero_ot = _m_ot_resuelva.group(1).upper()
-        _observaciones = _m_ot_resuelva.group(2) or ''
-        _fotos_url = media_url if media_url else ''
-        handle_ot_resolver(_numero_ot, _observaciones, _fotos_url, numero, resp, msg, use_meta, 
-                          enviar_whatsapp, OPERARIOS, SUPERVISOR_WA, GMAIL_USER, GMAIL_APP_PASSWORD)
-        return str(resp) if not use_meta else ('OK', 200)
-
-
 
     # ══════════════════════════════════════════════════════════════════════════
     # HERRAMIENTA — Flujo conversacional
@@ -2369,6 +2421,8 @@ def webhook():
         elif op == '6':
             set_paso(numero, 'vehiculo_menu')
             msg.body("🚗 *Vehículos*\n\nEscribe *vehiculo* para acceder al módulo de mantenimiento.")
+        elif op == '8':
+            gestionar_ot_whatsapp(numero, 'ots', msg)
         elif op == '7':
             num_limpio_ge = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_ge = OPERARIOS.get(num_limpio_ge, '')
