@@ -430,7 +430,8 @@ def _ot_list(filtro='pendientes'):
     c=get_db(); q=c.cursor()
     base = "SELECT numero,centro,averia,prioridad,estado,COALESCE(asignado_nombre,'Sin asignar'),fecha_limite,COALESCE(observaciones,'') FROM ots_tbsa"
     if filtro == 'pendientes':
-        where, params = "estado='pendiente'", ()
+        # La categoría de pendientes del dashboard no duplica las urgentes.
+        where, params = "estado='pendiente' AND prioridad<>'urgente'", ()
     elif filtro == 'asignadas':
         where, params = "estado='asignada'", ()
     elif filtro == 'urgentes':
