@@ -180,6 +180,51 @@ def init_db():
                 INSERT INTO ots_tbsa (numero, centro, averia, prioridad)
                 VALUES (%s,%s,%s,%s) ON CONFLICT (numero) DO NOTHING
             """, _ot)
+        # Sincronización inicial con el dashboard real de OTs TBSA.
+        # Se ejecuta una sola vez para incorporar las OTs 44/47 y actualizar
+        # centros, averías, estados, asignaciones y prioridades del dashboard.
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS app_migrations (
+                clave VARCHAR(100) PRIMARY KEY, aplicado_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        cur.execute("SELECT 1 FROM app_migrations WHERE clave='ots_dashboard_2026_08_08'")
+        if not cur.fetchone():
+            _ots_dashboard = [
+                (37, 'TBSA — Central Logística y Oficinas', 'Grupo electrógeno no arranca tras cortes de luz. +7 cortes el 07/07. Corte CPF realizado 08/07 22:00h — sin resolver por incomparecencia del responsable de mantenimiento de TBSA.', 'urgente', 'pendiente', None, None, '06/07/2026 | Reprogramar'),
+                (44, 'SPAR Triana — Los Llanos', 'Instalar foco con temporizador en puerta de salida/recepción — zona muy oscura por la noche.', 'alta', 'asignada', '34636606175', 'Jonathan', '20/07/2026 | Aviso 25668'),
+                (47, 'SPAR El Muelle', 'Instalación toma de corriente para puerta eléctrica.', 'pendiente', 'asignada', '34616233640', 'Toño Guardia', '21/07/2026 | Aviso 26010'),
+                (3, 'SPAR Triana', 'Tapar canaletas en cuarto grupo electrógeno.', 'pendiente', 'pendiente', None, None, '11/05/2026'),
+                (6, 'SPAR El Paso', 'Grupo electrógeno tarda en arrancar — bomba gasoil.', 'pendiente', 'pendiente', None, None, '11/05/2026'),
+                (19, 'SPAR Tagomago — Los Llanos', 'Varias luminarias no encienden — conjunto de prueba ya recibido en tienda. Coordinar con Fernando.', 'pendiente', 'pendiente', None, None, '01/06/2026 | Visita anulada 03/07'),
+                (20, 'TBSA — Central (Breña Baja)', 'Instalación tomas de corriente zona PREVENTAS y Almacén Central. Ventiladores ya instalados — pasar a realizar instalación eléctrica.', 'pendiente', 'pendiente', None, None, '01/06/2026 | Aviso 25360 | Ventiladores listos ✓'),
+                (21, 'TBSA — Local San Pedro', 'Dar de alta luz con mínima potencia necesaria.', 'pendiente', 'pendiente', None, None, '02/06/2026 | Aviso 25385'),
+                (27, 'TBSA — Central (Breña Baja)', 'Batería condensadores de la central en peligro.', 'pendiente', 'pendiente', None, None, '18/06/2026'),
+                (29, 'TBSA — Central (Breña Baja)', 'Daño del equipo de fichar por apagones de corriente.', 'pendiente', 'pendiente', None, None, '01/07/2026 | Aviso 25781'),
+                (30, 'TBSA — Central (Breña Baja)', 'Fallo en luminaria de emergencia en zona de cámaras.', 'pendiente', 'pendiente', None, None, '01/07/2026 | Aviso 25782'),
+                (31, 'TBSA — Almacén General', 'Enchufe averiado en zona de carga de carretillas.', 'pendiente', 'pendiente', None, None, '01/07/2026 | Aviso 25783'),
+                (32, 'TBSA — Almacén General', 'Cuadro eléctrico con fusibles quemados.', 'pendiente', 'pendiente', None, None, '01/07/2026 | Aviso 25784'),
+                (34, 'SPAR Salinas', 'Diferencial disparando en cuadro.', 'pendiente', 'pendiente', None, None, '01/07/2026 | Aviso 25786'),
+                (35, 'TBSA — Almacén General', 'Independizar los inversores según presupuesto adjunto.', 'pendiente', 'pendiente', None, None, '16/06/2026 | Aviso 25577 · OT 4614'),
+                (36, 'SPAR Triana — Los Llanos', 'Cambio de escape de grupo electrógeno — pasar lo antes posible para puesta en marcha.', 'pendiente', 'pendiente', None, None, '06/07/2026'),
+                (40, 'TBSA — Central / Almacén', 'Revisar si enchufes de dispositivos de fichaje en oficinas y almacén central están con corriente estabilizada.', 'pendiente', 'pendiente', None, None, '13/07/2026 | Aviso 25931'),
+                (41, 'TBSA — Almacén Central', 'Colocar interruptor de bypass y enganchar UPS para almacén central.', 'pendiente', 'pendiente', None, None, '13/07/2026 | Aviso 25930'),
+            ]
+            for _n, _c, _a, _prio, _estado, _num, _nom, _obs in _ots_dashboard:
+                cur.execute("""
+                    INSERT INTO ots_tbsa
+                        (numero, centro, averia, prioridad, estado, asignado_numero, asignado_nombre, observaciones)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                    ON CONFLICT (numero) DO UPDATE SET
+                        centro=EXCLUDED.centro, averia=EXCLUDED.averia,
+                        prioridad=EXCLUDED.prioridad, estado=EXCLUDED.estado,
+                        asignado_numero=EXCLUDED.asignado_numero,
+                        asignado_nombre=EXCLUDED.asignado_nombre,
+                        observaciones=EXCLUDED.observaciones,
+                        updated_at=NOW()
+                """, (_n, _c, _a, _prio, _estado, _num, _nom, _obs))
+            cur.execute("INSERT INTO app_migrations (clave) VALUES ('ots_dashboard_2026_08_08')")
+
         # Migraciones de columnas
         try:
             cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_inicio TYPE VARCHAR(50)")
