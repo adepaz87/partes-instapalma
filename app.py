@@ -381,8 +381,50 @@ def _ot_row(num):
 def _ot_line(r):
     icon='🚨' if r[3]=='urgente' else ('✅' if r[4]=='resuelta' else '⏳')
     return f"{icon} *OT {r[0]}* — {r[1]}\n{r[2]}\n👷 {r[5]}"
-def _ot_list():
-    c=get_db(); q=c.cursor(); q.execute("""SELECT numero,centro,averia,prioridad,estado,COALESCE(asignado_nombre,'Sin asignar'),fecha_limite,COALESCE(observaciones,'') FROM ots_tbsa WHERE estado<>'resuelta' ORDER BY CASE WHEN prioridad='urgente' THEN 0 ELSE 1 END,numero"""); rows=q.fetchall(); q.close(); c.close(); return rows
+def _ot_list(filtro='pendientes'):
+    c=get_db(); q=c.cursor()
+    base = "SELECT numero,centro,averia,prioridad,estado,COALESCE(asignado_nombre,'Sin asignar'),fecha_limite,COALESCE(observaciones,'') FROM ots_tbsa"
+    if filtro == 'pendientes':
+        where, params = "estado='pendiente'", ()
+    elif filtro == 'asignadas':
+        where, params = "estado='asignada'", ()
+    elif filtro == 'urgentes':
+        where, params = "prioridad='urgente' AND estado<>'resuelta'", ()
+    elif filtro == 'resueltas':
+        where, params = "estado='resuelta'", ()
+    elif filtro == 'confirmacion':
+        where, params = "estado IN ('pendiente_confirmacion','confirmacion_pendiente')", ()
+    else:
+        where, params = "estado<>'resuelta'", ()
+    q.execute(base + " WHERE " + where + " ORDER BY CASE WHEN prioridad='urgente' THEN 0 ELSE 1 END,numero", params)
+    rows=q.fetchall(); q.close(); c.close(); return rows
+
+OT_MENU = (
+    "🔧 *Órdenes de trabajo TBSA*\n\n"
+    "¿Qué quieres consultar?\n\n"
+    "1️⃣ OTs pendientes\n"
+    "2️⃣ OTs asignadas\n"
+    "3️⃣ OTs urgentes\n"
+    "4️⃣ OTs resueltas\n"
+    "5️⃣ Trabajos pendientes de confirmación\n\n"
+    "También puedes escribir directamente: *OT número*, *OT número Toño* o *OT número resuelta*."
+)
+
+def _ot_consulta(numero, opcion, msg):
+    nombres = {
+        '1': ('OTs pendientes', 'pendientes'),
+        '2': ('OTs asignadas', 'asignadas'),
+        '3': ('OTs urgentes', 'urgentes'),
+        '4': ('OTs resueltas', 'resueltas'),
+        '5': ('Trabajos pendientes de confirmación', 'confirmacion'),
+    }
+    if opcion not in nombres:
+        msg.body(OT_MENU); return True
+    titulo, filtro = nombres[opcion]
+    rows = _ot_list(filtro)
+    cuerpo = '\n\n'.join(_ot_line(r) for r in rows) if rows else 'No hay registros en esta categoría.'
+    msg.body(f"📋 *{titulo}*\n\n{cuerpo}\n\n_Escribe *8* para volver al menú de OTs._")
+    return True
 def _ot_mail_done(num,center,job,worker,notes):
     try:
         e=MIMEMultipart(); e['From']=GMAIL_USER; e['To']='rbarrera@tomasbarretosa.com, fconcepcion@tomasbarretosa.com'; e['Subject']=f'OT {num} resuelta — {center}'
@@ -394,9 +436,16 @@ def gestionar_ot_whatsapp(numero,texto,msg):
     t=normalizar(texto)
     if not (re.search(r'\bots?\b',t) or 'orden de trabajo' in t or 'ordenes de trabajo' in t): return False
     sup=_ot_supervisor(numero)
-    if t in ('ot','ots','ot tbsa','ots tbsa','ordenes','órdenes','ordenes tbsa','órdenes tbsa','ot pendientes'):
+    if t in ('ots','ot tbsa','ots tbsa','ordenes','órdenes','ordenes tbsa','órdenes tbsa'):
         if sup:
-            rows=_ot_list(); msg.body('📋 *OTs TBSA pendientes*\n\n'+'\n\n'.join(_ot_line(r) for r in rows)+'\n\n_Comandos: OT número · OT número Toño · OT número resuelta_')
+            set_paso(numero, 'ot_consulta_menu')
+            msg.body(OT_MENU)
+        else:
+            msg.body('🔧 *Gestión de OTs TBSA*\n\nCuando termines responde: *OT número resuelta*\nEjemplo: *OT 56 resuelta*')
+        return True
+    if t in ('ot','ot pendientes'):
+        if sup:
+            rows=_ot_list('pendientes'); msg.body('📋 *OTs pendientes*\n\n'+'\n\n'.join(_ot_line(r) for r in rows)+'\n\n_Comandos: OT número · OT número Toño · OT número resuelta_')
         else: msg.body('🔧 *Gestión de OTs TBSA*\n\nCuando termines responde: *OT número resuelta*\nEjemplo: *OT 56 resuelta*')
         return True
     # Formas naturales de alta/asignación usadas por Alberto.
@@ -1790,6 +1839,24 @@ def webhook():
             _ot_atendida = True
         if _ot_atendida:
             return str(resp) if not use_meta else ('OK', 200)
+
+    # Submenú de consultas de OTs abierto desde la opción 8.
+    if estado and estado.get('paso') == 'ot_consulta_menu':
+        _op_ot = ''.join(c for c in incoming_msg if c.isdigit())
+        if _op_ot in ('1', '2', '3', '4', '5'):
+            borrar_estado(numero)
+            try:
+                _ot_consulta(numero, _op_ot, msg)
+            except Exception as _ot_menu_exc:
+                print(f'Error consultando categoría OT {_op_ot}: {_ot_menu_exc}', flush=True)
+                msg.body('⚠️ No pude consultar esa categoría ahora. Escribe *8* para volver a intentarlo.')
+            return str(resp) if not use_meta else ('OK', 200)
+        if _op_ot == '8':
+            set_paso(numero, 'ot_consulta_menu')
+            msg.body(OT_MENU)
+            return str(resp) if not use_meta else ('OK', 200)
+        msg.body(OT_MENU)
+        return str(resp) if not use_meta else ('OK', 200)
 
     # Gestión de OTs TBSA desde el bot.
     if gestionar_ot_whatsapp(numero, incoming_msg, msg):
