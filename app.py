@@ -1709,6 +1709,7 @@ def webhook():
             numero = 'whatsapp:+' + msg_obj['from']
             media_url = ''
         except (KeyError, IndexError):
+            print('Webhook JSON recibido sin mensaje de texto procesable', flush=True)
             return 'OK', 200
     else:
         incoming_msg = request.form.get('Body', '').strip()
@@ -1717,6 +1718,7 @@ def webhook():
         num_media = int(request.form.get('NumMedia', 0))
         media_url = request.form.get('MediaUrl0', '') if num_media > 0 else ''
 
+    print(f'Webhook entrada: tipo={request.content_type} numero={numero!r} cuerpo={incoming_msg!r}', flush=True)
     use_meta = request.is_json
 
     class MetaMsg:
@@ -1775,13 +1777,18 @@ def webhook():
                 msg.body(f"No encontré una solicitud pendiente #{_vac_id_apr}. Verifica el número.")
             return str(resp) if not use_meta else ('OK', 200)
 
-    # El número 8 debe abrir las OTs aunque el estado del menú se haya perdido
-    # (puede ocurrir si el primer mensaje llegó por otro proveedor o durante
-    # un reinicio del proceso). WhatsApp puede enviar el número como tecla
-    # emoji (8️⃣), por eso quitamos los selectores Unicode antes de comparar.
-    _opcion_ot_directa = normalizar(incoming_msg).strip().replace('\ufe0f', '').replace('\u20e3', '')
+    # El número 8 debe abrir las OTs aunque el estado del menú se haya perdido.
+    # WhatsApp puede añadir selectores Unicode o caracteres invisibles al número;
+    # aquí aceptamos cualquier mensaje que contenga únicamente el dígito 8.
+    _opcion_ot_directa = ''.join(c for c in incoming_msg if c.isdigit())
     if _opcion_ot_directa == '8':
-        if gestionar_ot_whatsapp(numero, 'ots', msg):
+        try:
+            _ot_atendida = gestionar_ot_whatsapp(numero, 'ots', msg)
+        except Exception as _ot_exc:
+            print(f'Error abriendo OTs desde opcion 8: {_ot_exc}', flush=True)
+            msg.body('⚠️ No pude cargar las OTs en este momento. Escribe *OT* para intentarlo de nuevo.')
+            _ot_atendida = True
+        if _ot_atendida:
             return str(resp) if not use_meta else ('OK', 200)
 
     # Gestión de OTs TBSA desde el bot.
