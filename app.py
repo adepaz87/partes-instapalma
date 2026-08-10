@@ -469,7 +469,7 @@ def _ot_consulta(numero, opcion, msg):
     titulo, filtro = nombres[opcion]
     rows = _ot_list(filtro)
     cuerpo = '\n\n'.join(_ot_line(r) for r in rows) if rows else 'No hay registros en esta categoría.'
-    msg.body(f"📋 *{titulo}*\n\n{cuerpo}\n\n_Escribe *8* para volver al menú de OTs._")
+    msg.body(f"📋 *{titulo}*\n\n{cuerpo}\n\n_Escribe *OT* para volver al menú de OTs._")
     return True
 def _ot_mail_done(num,center,job,worker,notes):
     try:
@@ -546,8 +546,7 @@ MENU_PRINCIPAL = (
     "4️⃣ Vacaciones\n"
     "5️⃣ Resumen fin de mes\n"
     "6️⃣ Vehículos\n"
-    "7️⃣ Mantenimiento GE (TBSA)\n"
-    "8️⃣ Órdenes de trabajo TBSA\n\n"
+    "7️⃣ Mantenimiento GE (TBSA)\n\n"
     "_Escribe el número o la palabra clave directamente_"
 )
 
@@ -1872,21 +1871,7 @@ def webhook():
                 msg.body(f"No encontré una solicitud pendiente #{_vac_id_apr}. Verifica el número.")
             return str(resp) if not use_meta else ('OK', 200)
 
-    # El número 8 debe abrir las OTs aunque el estado del menú se haya perdido.
-    # WhatsApp puede añadir selectores Unicode o caracteres invisibles al número;
-    # aquí aceptamos cualquier mensaje que contenga únicamente el dígito 8.
-    _opcion_ot_directa = ''.join(c for c in incoming_msg if c.isdigit())
-    if _opcion_ot_directa == '8':
-        try:
-            _ot_atendida = gestionar_ot_whatsapp(numero, 'ots', msg)
-        except Exception as _ot_exc:
-            print(f'Error abriendo OTs desde opcion 8: {_ot_exc}', flush=True)
-            msg.body('⚠️ No pude cargar las OTs en este momento. Escribe *OT* para intentarlo de nuevo.')
-            _ot_atendida = True
-        if _ot_atendida:
-            return str(resp) if not use_meta else ('OK', 200)
-
-    # Submenú de consultas de OTs abierto desde la opción 8.
+    # Submenú de consultas de OTs abierto escribiendo OT/OTS.
     if estado and estado.get('paso') == 'ot_consulta_menu':
         _op_ot = ''.join(c for c in incoming_msg if c.isdigit())
         if _op_ot in ('1', '2', '3', '4', '5'):
@@ -1896,10 +1881,6 @@ def webhook():
             except Exception as _ot_menu_exc:
                 print(f'Error consultando categoría OT {_op_ot}: {_ot_menu_exc}', flush=True)
                 msg.body('⚠️ No pude consultar esa categoría ahora. Escribe *8* para volver a intentarlo.')
-            return str(resp) if not use_meta else ('OK', 200)
-        if _op_ot == '8':
-            set_paso(numero, 'ot_consulta_menu')
-            msg.body(OT_MENU)
             return str(resp) if not use_meta else ('OK', 200)
         msg.body(OT_MENU)
         return str(resp) if not use_meta else ('OK', 200)
@@ -2550,8 +2531,6 @@ def webhook():
         elif op == '6':
             set_paso(numero, 'vehiculo_menu')
             msg.body("🚗 *Vehículos*\n\nEscribe *vehiculo* para acceder al módulo de mantenimiento.")
-        elif op == '8':
-            gestionar_ot_whatsapp(numero, 'ots', msg)
         elif op == '7':
             num_limpio_ge = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_ge = OPERARIOS.get(num_limpio_ge, '')
