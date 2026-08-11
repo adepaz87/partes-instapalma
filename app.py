@@ -1111,23 +1111,31 @@ def enviar_email_con_pdf(destinatario, asunto, cuerpo, pdf_bytes, nombre_pdf):
 
 
 def enviar_whatsapp(destino, mensaje, media_url=None):
-    try:
-        from twilio.rest import Client
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-        # Normalizar formato: asegurar whatsapp:+XXXXX sin espacios
-        destino = destino.strip()
-        if destino.startswith('whatsapp:'):
-            num = destino[len('whatsapp:'):].strip().lstrip('+')
-            destino = f'whatsapp:+{num}'
-        else:
-            destino = 'whatsapp:+' + destino.strip().lstrip('+')
-        kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
-        if media_url:
-            kwargs['media_url'] = [media_url]
-        client.messages.create(**kwargs)
-        print(f"WA enviado OK a {destino}")
-    except Exception as e:
-        print(f"Error WA: {e}")
+    # Reintento único para evitar perder avisos por un fallo transitorio de
+    # Twilio/WhatsApp. El contenido y el destinatario se mantienen idénticos.
+    import time as _time
+    from twilio.rest import Client
+    destino = destino.strip()
+    if destino.startswith('whatsapp:'):
+        num = destino[len('whatsapp:'):].strip().lstrip('+')
+        destino = f'whatsapp:+{num}'
+    else:
+        destino = 'whatsapp:+' + destino.strip().lstrip('+')
+    kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
+    if media_url:
+        kwargs['media_url'] = [media_url]
+    for _intento in range(2):
+        try:
+            client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+            client.messages.create(**kwargs)
+            print(f"WA enviado OK a {destino}")
+            return
+        except Exception as e:
+            if _intento == 0:
+                print(f"Error WA (reintentando): {e}", flush=True)
+                _time.sleep(2)
+            else:
+                print(f"Error WA definitivo: {e}", flush=True)
 
 def generar_resumen(datos):
     ops  = datos.get('operarios', 'Ninguno')
