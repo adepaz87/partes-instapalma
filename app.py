@@ -3950,6 +3950,7 @@ def ver_parte(parte_id):
 
 
 @app.route('/partes/<int:parte_id>/pdf', methods=['GET'])
+@app.route('/partes/<int:parte_id>/pdf.pdf', methods=['GET'])
 def descargar_pdf(parte_id):
     r = get_parte_by_id(parte_id)
     if not r:
