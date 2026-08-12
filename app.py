@@ -5305,17 +5305,23 @@ def panel_resumenes():
 def pdf_resumen(rid):
     try:
         conn = get_db(); cur = conn.cursor()
-        cur.execute("SELECT nombre_operario, operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url FROM resumen_mes WHERE id=%s", (rid,))
+        cur.execute("SELECT nombre_operario, operario, mes, horas_extra, dias_vacaciones, total_gastos, foto_url, horas_diarias FROM resumen_mes WHERE id=%s", (rid,))
         r = cur.fetchone(); cur.close(); conn.close()
     except Exception as e:
         return f"Error: {e}", 500
     if not r:
         return "No encontrado", 404
+    _horas_diarias_pdf = r[7] or []
+    if isinstance(_horas_diarias_pdf, str):
+        try:
+            _horas_diarias_pdf = json.loads(_horas_diarias_pdf)
+        except Exception:
+            _horas_diarias_pdf = []
     datos = {
         'nombre_operario': r[0] or r[1],
         'mes': r[2], 'horas_extra': r[3],
         'dias_vacaciones': r[4], 'total_gastos': r[5],
-        'foto_url': r[6] or ''
+        'foto_url': r[6] or '', 'horas_diarias': _horas_diarias_pdf
     }
     pdf_bytes = generar_pdf_resumen_mes(datos)
     nombre_fichero = f"RESUMEN-{(r[2] or 'MES').replace(' ','_').upper()}-{(r[0] or '').replace(' ','_').upper()}.pdf"
