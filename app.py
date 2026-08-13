@@ -6640,6 +6640,51 @@ if __name__ == '__main__':
 # WEB — Gestión de Herramienta /herramienta
 # ══════════════════════════════════════════════════════════════════════════════
 
+@app.route('/herramienta/traspasar_personal/<int:pid>', methods=['POST'])
+def web_traspasar_personal(pid):
+    """Traspasa una herramienta personal al stock compartido de almacén."""
+    from flask import redirect
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT articulo, propietario, tipo FROM herramienta_personal WHERE id=%s FOR UPDATE', (pid,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return redirect('/herramienta')
+        articulo, propietario, tipo = row
+        if (tipo or '').lower() != 'herramienta':
+            cur.close(); conn.close()
+            return redirect('/herramienta')
+        # Si ya existe en la tabla maestra, convertirlo en compartido y sumar una unidad.
+        cur.execute('''
+            INSERT INTO herramienta (nombre, tipo, stock_almacen, propietario, observaciones)
+            VALUES (%s, 'almacen', 1, NULL, %s)
+            ON CONFLICT (nombre) DO UPDATE SET
+                tipo='almacen', stock_almacen=COALESCE(herramienta.stock_almacen,0)+1,
+                propietario=NULL, updated_at=NOW()
+        ''', (articulo, f'Traspasada desde herramienta personal de {propietario or "personal"}'))
+        cur.execute('DELETE FROM herramienta_personal WHERE id=%s', (pid,))
+        conn.commit(); cur.close(); conn.close()
+        try:
+            notify_supervisors(
+                f'📦 *Traspaso herramienta personal → almacén*\\n'
+                f'🔧 {articulo}\\n👷 Propietario anterior: {propietario or "Sin especificar"}\\n'
+                f'➕ Stock almacén: +1 ud.'
+            )
+        except Exception as _e:
+            print(f'Notif traspaso personal: {_e}')
+    except Exception as e:
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+        print(f'Error traspaso herramienta personal: {e}')
+        if conn:
+            try: conn.close()
+            except Exception: pass
+    return redirect('/herramienta')
+
+
 @app.route('/herramienta')
 def web_herramienta():
     conn = get_db(); cur = conn.cursor()
@@ -6671,10 +6716,18 @@ def web_herramienta():
         f"<td style='white-space:nowrap'><a href='/herramienta/editar_obra/{o[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/baja_obra/{o[0]}' onclick='return confirm(\"¿Confirmar baja?\")'>🔙 Baja</a></td></tr>"
         for o in en_obra
     )
-    filas_pers = "".join(
-        f"<tr><td>{p[1]}</td><td>{p[2] or ''}</td><td>{p[3] or ''}</td></tr>"
-        for p in personal
-    )
+    def _fila_personal(p):
+        pid, articulo, propietario, tipo = p
+        if (tipo or '').lower() == 'herramienta':
+            accion = (
+                f"<form method='POST' action='/herramienta/traspasar_personal/{pid}' style='display:inline'>"
+                f"<button type='submit' style='background:#2e7d32;color:white;border:0;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px' "
+                f"onclick=\"return confirm('¿Traspasar {articulo} de {propietario or 'personal'} al almacén?')\">📦→ Almacén</button></form>"
+            )
+        else:
+            accion = '<span style="color:#999;font-size:11px">Solo EPI</span>'
+        return f"<tr><td>{articulo}</td><td>{propietario or ''}</td><td>{tipo or ''}</td><td>{accion}</td></tr>"
+    filas_pers = ''.join(_fila_personal(p) for p in personal)
 
     return f"""<!DOCTYPE html><html><head><meta charset='utf-8'><title>Herramienta — Instapalma</title>
     <style>{CSS_BASE}
@@ -6721,8 +6774,8 @@ def web_herramienta():
     </div>
 
     <div id='pers' class='section'>
-      <table><tr><th>Herramienta / EPI</th><th>Operario</th><th>Descripción</th></tr>
-      {filas_pers if filas_pers else "<tr><td colspan='3' style='text-align:center;color:#999'>Sin asignaciones personales</td></tr>"}
+      <table><tr><th>Herramienta / EPI</th><th>Operario</th><th>Descripción</th><th>Acción</th></tr>
+      {filas_pers if filas_pers else "<tr><td colspan='4' style='text-align:center;color:#999'>Sin asignaciones personales</td></tr>"}
       </table>
     </div>
 
