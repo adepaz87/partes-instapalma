@@ -6642,8 +6642,9 @@ if __name__ == '__main__':
 
 @app.route('/herramienta/traspasar_personal/<int:pid>', methods=['POST'])
 def web_traspasar_personal(pid):
-    """Traspasa una herramienta personal al stock compartido de almacén."""
-    from flask import redirect
+    """Traspasa una o varias unidades de una asignación personal al almacén."""
+    from flask import redirect, request as req
+    import re as _re_transfer
     conn = None
     try:
         conn = get_db(); cur = conn.cursor()
@@ -6653,24 +6654,38 @@ def web_traspasar_personal(pid):
             cur.close(); conn.close()
             return redirect('/herramienta')
         articulo, propietario, tipo = row
-        if (tipo or '').lower() != 'herramienta':
+        m_qty = _re_transfer.match(r'^\s*(\d+)\s+(.+?)\s*$', articulo or '')
+        disponibles = int(m_qty.group(1)) if m_qty else 1
+        nombre_almacen = (m_qty.group(2) if m_qty else articulo).strip()
+        try:
+            cantidad = int(req.form.get('qty', disponibles) or disponibles)
+        except Exception:
+            cantidad = 0
+        if cantidad < 1 or cantidad > disponibles:
             cur.close(); conn.close()
             return redirect('/herramienta')
-        # Si ya existe en la tabla maestra, convertirlo en compartido y sumar una unidad.
+        tipo_almacen = 'epis' if (tipo or '').lower() in ('epi', 'epis') else 'almacen'
+        # Si ya existe en la tabla maestra, convertirlo en compartido y sumar unidades.
         cur.execute('''
             INSERT INTO herramienta (nombre, tipo, stock_almacen, propietario, observaciones)
-            VALUES (%s, 'almacen', 1, NULL, %s)
+            VALUES (%s, %s, %s, NULL, %s)
             ON CONFLICT (nombre) DO UPDATE SET
-                tipo='almacen', stock_almacen=COALESCE(herramienta.stock_almacen,0)+1,
+                tipo=EXCLUDED.tipo, stock_almacen=COALESCE(herramienta.stock_almacen,0)+EXCLUDED.stock_almacen,
                 propietario=NULL, updated_at=NOW()
-        ''', (articulo, f'Traspasada desde herramienta personal de {propietario or "personal"}'))
-        cur.execute('DELETE FROM herramienta_personal WHERE id=%s', (pid,))
+        ''', (nombre_almacen, tipo_almacen, cantidad,
+              f'Traspasada desde herramienta personal de {propietario or "personal"}'))
+        restante = disponibles - cantidad
+        if restante:
+            cur.execute('UPDATE herramienta_personal SET articulo=%s WHERE id=%s',
+                        (f'{restante} {nombre_almacen}', pid))
+        else:
+            cur.execute('DELETE FROM herramienta_personal WHERE id=%s', (pid,))
         conn.commit(); cur.close(); conn.close()
         try:
             notify_supervisors(
                 f'📦 *Traspaso herramienta personal → almacén*\\n'
-                f'🔧 {articulo}\\n👷 Propietario anterior: {propietario or "Sin especificar"}\\n'
-                f'➕ Stock almacén: +1 ud.'
+                f'🔧 {nombre_almacen}\\n👷 Propietario anterior: {propietario or "Sin especificar"}\\n'
+                f'➕ Stock almacén: +{cantidad} ud.'
             )
         except Exception as _e:
             print(f'Notif traspaso personal: {_e}')
@@ -6718,14 +6733,18 @@ def web_herramienta():
     )
     def _fila_personal(p):
         pid, articulo, propietario, tipo = p
-        if (tipo or '').lower() == 'herramienta':
-            accion = (
-                f"<form method='POST' action='/herramienta/traspasar_personal/{pid}' style='display:inline'>"
-                f"<button type='submit' style='background:#2e7d32;color:white;border:0;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px' "
-                f"onclick=\"return confirm('¿Traspasar {articulo} de {propietario or 'personal'} al almacén?')\">📦→ Almacén</button></form>"
-            )
-        else:
-            accion = '<span style="color:#999;font-size:11px">Solo EPI</span>'
+        import re as _re_personal_row
+        m_qty = _re_personal_row.match(r'^\s*(\d+)\s+(.+?)\s*$', articulo or '')
+        disponibles = int(m_qty.group(1)) if m_qty else 1
+        cantidad = (
+            f"<input name='qty' type='number' min='1' max='{disponibles}' value='1' style='width:46px;padding:4px;margin-right:4px' title='Unidades a traspasar'>"
+            if disponibles > 1 else "<input type='hidden' name='qty' value='1'>"
+        )
+        accion = (
+            f"<form method='POST' action='/herramienta/traspasar_personal/{pid}' style='display:inline'>"
+            f"{cantidad}<button type='submit' style='background:#2e7d32;color:white;border:0;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px' "
+            f"onclick=\"return confirm('¿Traspasar unidades de {articulo} de {propietario or 'personal'} al almacén?')\">📦→ Almacén</button></form>"
+        )
         return f"<tr><td>{articulo}</td><td>{propietario or ''}</td><td>{tipo or ''}</td><td>{accion}</td></tr>"
     filas_pers = ''.join(_fila_personal(p) for p in personal)
 
