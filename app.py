@@ -6640,6 +6640,91 @@ if __name__ == '__main__':
 # WEB — Gestión de Herramienta /herramienta
 # ══════════════════════════════════════════════════════════════════════════════
 
+@app.route('/herramienta/asignar_personal/<int:mid>', methods=['GET', 'POST'])
+def web_asignar_personal(mid):
+    """Asigna una o varias unidades del almacén a una persona."""
+    from flask import redirect, request as req
+    import re as _re_assign
+    import unicodedata as _ud_assign
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute('SELECT nombre, tipo, stock_almacen FROM herramienta WHERE id=%s FOR UPDATE', (mid,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return redirect('/herramienta')
+        nombre, tipo, stock = row
+        if req.method == 'GET':
+            cur.execute('SELECT DISTINCT propietario FROM herramienta_personal WHERE propietario IS NOT NULL ORDER BY propietario')
+            propietarios = [r[0] for r in cur.fetchall()]
+            cur.close(); conn.close()
+            opciones = ''.join(f'<option value="{p}">' for p in propietarios)
+            return f'''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Asignar herramienta a personal</title>
+            <style>{CSS_BASE} form{{max-width:480px;margin:32px auto;background:white;padding:26px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.1)}}
+            label{{display:block;font-weight:600;margin:14px 0 5px}} input{{width:100%;padding:10px;border:1px solid #ccc;border-radius:7px;box-sizing:border-box}}
+            .btn{{background:#5c3a1a;color:white;padding:11px 22px;border:0;border-radius:7px;font-weight:700;cursor:pointer;margin-top:18px}}
+            .back{{color:#1a3a5c;text-decoration:none}}</style></head><body>
+            <header><div><h1>👷 Asignar herramienta a personal</h1><p>Instapalma</p></div></header>
+            <form method="POST">
+              <p><b>Herramienta:</b> {nombre}<br><b>Tipo:</b> {tipo}<br><b>Stock disponible:</b> {stock} ud.</p>
+              <label>Operario / propietario</label><input name="propietario" list="propietarios" required placeholder="Nombre completo">
+              <datalist id="propietarios">{opciones}</datalist>
+              <label>Unidades</label><input name="qty" type="number" min="1" max="{stock}" value="1" required>
+              <button class="btn" type="submit">👷 Asignar a personal</button>
+            </form><div style="text-align:center"><a class="back" href="/herramienta">← Volver a herramienta</a></div>
+            </body></html>'''
+        propietario = req.form.get('propietario', '').strip()
+        try:
+            cantidad = int(req.form.get('qty', 1) or 1)
+        except Exception:
+            cantidad = 0
+        if not propietario or cantidad < 1 or cantidad > (stock or 0):
+            cur.close(); conn.close()
+            return redirect(f'/herramienta/asignar_personal/{mid}')
+        tipo_personal = 'epi' if (tipo or '').lower() in ('epi', 'epis') else 'herramienta'
+        # Buscar una asignación equivalente para agrupar unidades en una sola fila.
+        def _norm_assign(text):
+            return ''.join(c for c in _ud_assign.normalize('NFD', str(text).lower()) if _ud_assign.category(c) != 'Mn').strip()
+        cur.execute('SELECT id, articulo FROM herramienta_personal WHERE propietario=%s AND tipo=%s FOR UPDATE', (propietario, tipo_personal))
+        existente = None
+        base_norm = _norm_assign(nombre)
+        for pid_, articulo_ in cur.fetchall():
+            m_ = _re_assign.match(r'^\s*\d+\s+(.+?)\s*$', articulo_ or '')
+            base_ = (m_.group(1) if m_ else articulo_ or '').strip()
+            if _norm_assign(base_) == base_norm:
+                existente = (pid_, articulo_)
+                break
+        if existente:
+            pid_, articulo_ = existente
+            m_ = _re_assign.match(r'^\s*(\d+)\s+(.+?)\s*$', articulo_ or '')
+            actual = int(m_.group(1)) if m_ else 1
+            base_ = (m_.group(2) if m_ else articulo_).strip()
+            cur.execute('UPDATE herramienta_personal SET articulo=%s WHERE id=%s', (f'{actual + cantidad} {base_}', pid_))
+        else:
+            cur.execute('INSERT INTO herramienta_personal (propietario, articulo, tipo) VALUES (%s,%s,%s)',
+                        (propietario, f'{cantidad} {nombre}' if cantidad > 1 else nombre, tipo_personal))
+        cur.execute('UPDATE herramienta SET stock_almacen=stock_almacen-%s, updated_at=NOW() WHERE id=%s', (cantidad, mid))
+        conn.commit(); cur.close(); conn.close()
+        try:
+            notify_supervisors(
+                f'👷 *Asignación de herramienta desde almacén*\\n'
+                f'🔧 {nombre}\\n👷 Operario: {propietario}\\n➖ {cantidad} ud.\\n'
+                f'📦 Stock almacén restante: {stock-cantidad} ud.'
+            )
+        except Exception as _e:
+            print(f'Notif asignación personal: {_e}')
+        return redirect('/herramienta')
+    except Exception as e:
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+            try: conn.close()
+            except Exception: pass
+        print(f'Error asignación herramienta personal: {e}')
+        return redirect('/herramienta')
+
+
 @app.route('/herramienta/traspasar_personal/<int:pid>', methods=['POST'])
 def web_traspasar_personal(pid):
     """Traspasa una o varias unidades de una asignación personal al almacén."""
@@ -6721,11 +6806,16 @@ def web_herramienta():
     personal = cur.fetchall()
     cur.close(); conn.close()
 
-    filas_almacen = "".join(
-        f"<tr><td>{i[1]}</td><td><span class='tag tag-{i[2].lower()}'>{i[2]}</span></td><td style='text-align:center'><b>{i[3]}</b></td><td>{i[4] or ''}</td>"
-        f"<td style='white-space:nowrap'><a href='/herramienta/editar/{i[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/borrar/{i[0]}' onclick=\"return confirm('¿Eliminar herramienta? Si tiene unidades en obra no se podrá.')\">🗑️</a></td></tr>"
-        for i in items
-    )
+    def _fila_almacen(i):
+        accion_personal = (
+            f"<a href='/herramienta/asignar_personal/{i[0]}' style='background:#5c3a1a;color:white;border-radius:6px;padding:5px 8px;text-decoration:none;margin-right:6px;font-size:11px'>👷→ Personal</a>"
+            if (i[3] or 0) > 0 else ''
+        )
+        return (
+            f"<tr><td>{i[1]}</td><td><span class='tag tag-{(i[2] or '').lower()}'>{i[2]}</span></td><td style='text-align:center'><b>{i[3]}</b></td><td>{i[4] or ''}</td>"
+            f"<td style='white-space:nowrap'>{accion_personal}<a href='/herramienta/editar/{i[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/borrar/{i[0]}' onclick=\"return confirm('¿Eliminar herramienta? Si tiene unidades en obra no se podrá.')\">🗑️</a></td></tr>"
+        )
+    filas_almacen = ''.join(_fila_almacen(i) for i in items)
     filas_obra = "".join(
         f"<tr><td>{o[1]}</td><td>{nombre_operario(o[2]) if o[2] else ''}</td><td>{o[3]}</td><td>{str(o[4])[:10]}</td>"
         f"<td style='white-space:nowrap'><a href='/herramienta/editar_obra/{o[0]}' style='margin-right:8px'>✏️</a><a href='/herramienta/baja_obra/{o[0]}' onclick='return confirm(\"¿Confirmar baja?\")'>🔙 Baja</a></td></tr>"
