@@ -282,6 +282,8 @@ SUPERVISOR_EMAIL_1 = 'alberto@adpb.es'
 SUPERVISOR_EMAIL_2 = 'adm2@adpb.es'
 SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
 SUPERVISOR_WA_2    = 'whatsapp:+34663259208'
+# Plantilla aprobada para enviar confirmaciones con PDF fuera de la ventana de 24 h.
+TWILIO_PARTES_TEMPLATE_SID = 'HX7b385d2d921c7da2de5e745afdbd48cb'
 
 def notify_supervisors(texto, media_url=None):
     """Envía notificación WA a ambos supervisores, de forma independiente."""
@@ -1112,8 +1114,11 @@ def enviar_email_con_pdf(destinatario, asunto, cuerpo, pdf_bytes, nombre_pdf):
 
 def enviar_whatsapp(destino, mensaje, media_url=None):
     # Reintento único para evitar perder avisos por un fallo transitorio de
-    # Twilio/WhatsApp. El contenido y el destinatario se mantienen idénticos.
+    # Twilio/WhatsApp. Si la ventana de 24 h está cerrada, usa la plantilla
+    # aprobada de confirmación de partes con el PDF adjunto.
     import time as _time
+    import json as _json
+    import re as _re_wa
     from twilio.rest import Client
     destino = destino.strip()
     if destino.startswith('whatsapp:'):
@@ -1124,6 +1129,37 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
     kwargs = dict(from_=TWILIO_WA_NUMBER, to=destino, body=mensaje)
     if media_url:
         kwargs['media_url'] = [media_url]
+
+    def _enviar_plantilla_parte(client):
+        if not media_url or '/partes/' not in str(media_url):
+            return False
+        _id_match = _re_wa.search(r'/partes/(\d+)/pdf(?:\.pdf)?', str(media_url))
+        if not _id_match:
+            return False
+        _fecha = 'Fecha no indicada'
+        _m = _re_wa.search(r'(?:📄\s*\*?Parte\*?\s*[—-]\s*|📅\s*)([^\n]+)', str(mensaje))
+        if _m: _fecha = _m.group(1).strip()
+        _operario = 'Equipo Instapalma'
+        _m = _re_wa.search(r'👷\s*([^\n]+)', str(mensaje))
+        if _m: _operario = _m.group(1).strip()
+        _obra = 'Instapalma'
+        _m = _re_wa.search(r'🔨\s*([^\n]+)', str(mensaje))
+        if _m: _obra = _m.group(1).strip()
+        _estado = 'Ver PDF adjunto'
+        _m = _re_wa.search(r'🏁\s*([^\n]+)', str(mensaje))
+        if _m: _estado = _m.group(1).strip()
+        _vars = _json.dumps({
+            '1': _fecha, '2': _operario, '3': _obra,
+            '4': _estado, '5': f'{_id_match.group(1)}/pdf.pdf'
+        }, ensure_ascii=False)
+        client.messages.create(
+            from_=TWILIO_WA_NUMBER, to=destino,
+            content_sid=TWILIO_PARTES_TEMPLATE_SID,
+            content_variables=_vars
+        )
+        print(f"WA plantilla de parte enviada a {destino}")
+        return True
+
     for _intento in range(2):
         try:
             client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -1131,6 +1167,16 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
             print(f"WA enviado OK a {destino}")
             return
         except Exception as e:
+            # 63016 = ventana de atención de WhatsApp cerrada. En ese caso
+            # enviamos la plantilla aprobada, que sí permite iniciar sesión.
+            if getattr(e, 'code', None) == 63016:
+                try:
+                    if _enviar_plantilla_parte(Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)):
+                        return
+                except Exception as _e_tpl:
+                    print(f"Error plantilla WA parte: {_e_tpl}", flush=True)
+                print(f"Ventana WA cerrada para {destino}; no se pudo enviar plantilla", flush=True)
+                return
             if _intento == 0:
                 print(f"Error WA (reintentando): {e}", flush=True)
                 _time.sleep(2)
@@ -1202,6 +1248,7 @@ def finalizar_parte(numero, datos):
             return ''.join(c for c in t2 if _ud.category(c) != 'Mn')
         caption = (
             f"📄 *Parte* — {datos['fecha']}\n"
+            f"👷 {nombre_operario(numero)}\n"
             f"🏢 {_clean(datos['cliente'])} | 🔨 {_clean(datos['obra'])}\n"
             f"🏁 {linea_term}"
         )
