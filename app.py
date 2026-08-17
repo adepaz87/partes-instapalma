@@ -1163,7 +1163,16 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
     for _intento in range(2):
         try:
             client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-            client.messages.create(**kwargs)
+            _created = client.messages.create(**kwargs)
+            # Twilio puede aceptar el envío como "queued" y marcarlo unos
+            # segundos después como undelivered (63016). Comprobamos el estado
+            # cuando se trata de un PDF de parte para activar la plantilla.
+            if media_url and '/partes/' in str(media_url):
+                _time.sleep(3)
+                _latest = client.messages(_created.sid).fetch()
+                if _latest.status == 'undelivered' and getattr(_latest, 'error_code', None) == 63016:
+                    if _enviar_plantilla_parte(client):
+                        return
             print(f"WA enviado OK a {destino}")
             return
         except Exception as e:
