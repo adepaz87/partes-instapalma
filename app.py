@@ -1241,7 +1241,8 @@ def finalizar_parte(numero, datos):
     # Enviar PDF a tu WhatsApp y al operario
     BOT_URL = os.environ.get('RAILWAY_PUBLIC_DOMAIN', 'bot-production-66b8.up.railway.app')
     if parte_id:
-        pdf_url = f"https://{BOT_URL}/partes/{parte_id}/pdf"
+        # La extensión explícita evita rechazos de WhatsApp al adjuntar el PDF.
+        pdf_url = f"https://{BOT_URL}/partes/{parte_id}/pdf.pdf"
         import unicodedata as _ud
         def _clean(t):
             t2 = _ud.normalize('NFD', str(t))
