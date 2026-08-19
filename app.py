@@ -1193,20 +1193,26 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
                 print(f"Error WA definitivo: {e}", flush=True)
 
 def generar_resumen(datos):
-    ops  = datos.get('operarios', 'Ninguno')
-    albs = datos.get('albaranes', 'Ninguno')
-    mat  = datos.get('material_stock', 'Ninguno')
-    dev  = datos.get('devolucion_almacen', 'Ninguno')
-    desc = datos.get('descripcion', '-')
+    # WhatsApp limita el cuerpo de cada mensaje a 1600 caracteres. La vista
+    # previa se compacta para que el bot siempre pueda continuar; el PDF y el
+    # parte guardado conservan el contenido completo.
+    def _corto(valor, limite):
+        texto = str(valor if valor not in (None, '') else '-')
+        return texto if len(texto) <= limite else texto[:limite - 1].rstrip() + '…'
+    ops  = _corto(datos.get('operarios', 'Ninguno'), 180)
+    albs = _corto(datos.get('albaranes', 'Ninguno'), 100)
+    mat  = _corto(datos.get('material_stock', 'Ninguno'), 180)
+    dev  = _corto(datos.get('devolucion_almacen', 'Ninguno'), 100)
+    desc = _corto(datos.get('descripcion', '-'), 280)
     term = datos.get('terminado', '-')
-    trem = datos.get('tiempo_restante', '')
+    trem = _corto(datos.get('tiempo_restante', ''), 90)
     linea_term = f"✅ Sí" if normalizar(term) in ['si','sí'] else f"🔄 No — {trem}" if trem else f"🔄 No"
     return (
         f"📋 *RESUMEN DEL PARTE*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📅 Fecha: {datos['fecha']}\n"
-        f"🏢 Cliente: {datos['cliente']}\n"
-        f"🔨 Obra: {datos['obra']}\n"
+        f"🏢 Cliente: {_corto(datos['cliente'], 80)}\n"
+        f"🔨 Obra: {_corto(datos['obra'], 80)}\n"
         f"👷 Operarios:\n{ops}\n"
         f"📦 Albaranes: {albs}\n"
         f"🏗️ Material stock: {mat}\n"
