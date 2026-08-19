@@ -1170,7 +1170,7 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
             if media_url and '/partes/' in str(media_url):
                 _time.sleep(3)
                 _latest = client.messages(_created.sid).fetch()
-                if _latest.status == 'undelivered' and getattr(_latest, 'error_code', None) == 63016:
+                if _latest.status == 'undelivered' and str(getattr(_latest, 'error_code', '')) == '63016':
                     if _enviar_plantilla_parte(client):
                         return
             print(f"WA enviado OK a {destino}")
@@ -1178,7 +1178,7 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
         except Exception as e:
             # 63016 = ventana de atención de WhatsApp cerrada. En ese caso
             # enviamos la plantilla aprobada, que sí permite iniciar sesión.
-            if getattr(e, 'code', None) == 63016:
+            if str(getattr(e, 'code', '')) == '63016':
                 try:
                     if _enviar_plantilla_parte(Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)):
                         return
