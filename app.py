@@ -284,6 +284,8 @@ SUPERVISOR_WA      = os.environ.get('SUPERVISOR_WA', 'whatsapp:+34690875940')
 SUPERVISOR_WA_2    = 'whatsapp:+34663259208'
 # Plantilla aprobada para enviar confirmaciones con PDF fuera de la ventana de 24 h.
 TWILIO_PARTES_TEMPLATE_SID = 'HX7b385d2d921c7da2de5e745afdbd48cb'
+# Plantilla aprobable para avisos de solicitudes de vacaciones.
+TWILIO_VACACIONES_TEMPLATE_SID = 'HX3a34ab6b954d02641de2d22ad923bb67'
 
 def notify_supervisors(texto, media_url=None):
     """Envía notificación WA a ambos supervisores, de forma independiente."""
@@ -1160,6 +1162,30 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
         print(f"WA plantilla de parte enviada a {destino}")
         return True
 
+    def _enviar_plantilla_vacaciones(client):
+        _m_id = _re_wa.search(r'SOLICITUD DE VACACIONES\s*#(\d+)', str(mensaje), _re_wa.IGNORECASE)
+        if not _m_id:
+            return False
+        _m_op = _re_wa.search(r'👷\s*([^\n]+)', str(mensaje))
+        _m_fechas = _re_wa.search(r'Del\s+(.+?)\s+al\s+(.+?)(?:\n|$)', str(mensaje), _re_wa.IGNORECASE)
+        _m_dias = _re_wa.search(r'📆\s*([^\n]+)', str(mensaje))
+        _vars = _json.dumps({
+            '1': _m_id.group(1),
+            '2': (_m_op.group(1).strip() if _m_op else 'Operario'),
+            '3': (_m_fechas.group(1).strip() if _m_fechas else 'Fecha no indicada'),
+            '4': (_m_fechas.group(2).strip() if _m_fechas else 'Fecha no indicada'),
+            '5': (_m_dias.group(1).replace('días laborables','').strip() if _m_dias else 'No indicado'),
+        }, ensure_ascii=False)
+        client.messages.create(
+            from_=TWILIO_WA_NUMBER, to=destino,
+            content_sid=TWILIO_VACACIONES_TEMPLATE_SID,
+            content_variables=_vars
+        )
+        print(f"WA plantilla de vacaciones enviada a {destino}")
+        return True
+
+    _es_vacaciones = 'SOLICITUD DE VACACIONES' in str(mensaje).upper()
+
     for _intento in range(2):
         try:
             client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -1168,7 +1194,9 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
             # undelivered (63016) bastante después de crear el mensaje. No
             # bloqueamos el webhook: vigilamos el SID en segundo plano y
             # activamos la plantilla aprobada si el rechazo aparece después.
-            if media_url and '/partes/' in str(media_url):
+            if (media_url and '/partes/' in str(media_url)) or _es_vacaciones:
+                def _usar_plantilla_fallback():
+                    return _enviar_plantilla_parte(client) if (media_url and '/partes/' in str(media_url)) else _enviar_plantilla_vacaciones(client)
                 def _vigilar_entrega():
                     try:
                         for _ in range(12):  # hasta 60 s
@@ -1177,11 +1205,11 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
                             _estado = str(getattr(_latest, 'status', ''))
                             if _estado in ('delivered', 'read', 'failed'):
                                 if _estado == 'failed' and str(getattr(_latest, 'error_code', '')) == '63016':
-                                    _enviar_plantilla_parte(client)
+                                    _usar_plantilla_fallback()
                                 return
                             if _estado == 'undelivered':
                                 if str(getattr(_latest, 'error_code', '')) == '63016':
-                                    _enviar_plantilla_parte(client)
+                                    _usar_plantilla_fallback()
                                 return
                     except Exception as _watch_exc:
                         print(f"Error vigilando entrega WA {_created.sid}: {_watch_exc}", flush=True)
@@ -1194,10 +1222,13 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
             # enviamos la plantilla aprobada, que sí permite iniciar sesión.
             if str(getattr(e, 'code', '')) == '63016':
                 try:
-                    if _enviar_plantilla_parte(Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)):
+                    _client_tpl = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+                    _ok_tpl = (_enviar_plantilla_vacaciones(_client_tpl) if _es_vacaciones
+                               else _enviar_plantilla_parte(_client_tpl))
+                    if _ok_tpl:
                         return
                 except Exception as _e_tpl:
-                    print(f"Error plantilla WA parte: {_e_tpl}", flush=True)
+                    print(f"Error plantilla WA fallback: {_e_tpl}", flush=True)
                 print(f"Ventana WA cerrada para {destino}; no se pudo enviar plantilla", flush=True)
                 return
             if _intento == 0:
