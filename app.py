@@ -1164,15 +1164,29 @@ def enviar_whatsapp(destino, mensaje, media_url=None):
         try:
             client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
             _created = client.messages.create(**kwargs)
-            # Twilio puede aceptar el envío como "queued" y marcarlo unos
-            # segundos después como undelivered (63016). Comprobamos el estado
-            # cuando se trata de un PDF de parte para activar la plantilla.
+            # Twilio puede aceptar el envío como "queued" y marcarlo como
+            # undelivered (63016) bastante después de crear el mensaje. No
+            # bloqueamos el webhook: vigilamos el SID en segundo plano y
+            # activamos la plantilla aprobada si el rechazo aparece después.
             if media_url and '/partes/' in str(media_url):
-                _time.sleep(3)
-                _latest = client.messages(_created.sid).fetch()
-                if _latest.status == 'undelivered' and str(getattr(_latest, 'error_code', '')) == '63016':
-                    if _enviar_plantilla_parte(client):
-                        return
+                def _vigilar_entrega():
+                    try:
+                        for _ in range(12):  # hasta 60 s
+                            _time.sleep(5)
+                            _latest = client.messages(_created.sid).fetch()
+                            _estado = str(getattr(_latest, 'status', ''))
+                            if _estado in ('delivered', 'read', 'failed'):
+                                if _estado == 'failed' and str(getattr(_latest, 'error_code', '')) == '63016':
+                                    _enviar_plantilla_parte(client)
+                                return
+                            if _estado == 'undelivered':
+                                if str(getattr(_latest, 'error_code', '')) == '63016':
+                                    _enviar_plantilla_parte(client)
+                                return
+                    except Exception as _watch_exc:
+                        print(f"Error vigilando entrega WA {_created.sid}: {_watch_exc}", flush=True)
+                import threading as _threading
+                _threading.Thread(target=_vigilar_entrega, daemon=True).start()
             print(f"WA enviado OK a {destino}")
             return
         except Exception as e:
