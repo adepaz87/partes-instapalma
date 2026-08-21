@@ -29,10 +29,21 @@ from reportlab.lib.enums import TA_CENTER
 app = Flask(__name__)
 
 def fmt_cant(v):
-    """Formatea cantidad con coma decimal y 2 decimales. Ej: 2.0 → '2,00'"""
+    """Formatea cantidades con coma decimal y 2 decimales."""
     try:
         f = float(v)
         return f"{f:.2f}".replace(".", ",")
+    except:
+        return str(v)
+
+
+def fmt_unidades(v):
+    """Muestra las unidades sin decimales cuando son cantidades enteras."""
+    try:
+        f = float(v)
+        if abs(f - round(f)) < 1e-9:
+            return str(int(round(f)))
+        return f"{f:.3f}".rstrip('0').rstrip('.').replace('.', ',')
     except:
         return str(v)
 
@@ -2315,7 +2326,8 @@ def webhook():
                 subir_pdf_albaran(pdf_bytes, ref)
                 pdf_url = f"https://bot-production-66b8.up.railway.app/albaran/{ref}.pdf"
                 texto = f"📊 *{titulo}*\n\nListado generado."
-                notify_supervisors(texto, media_url=pdf_url)
+                # El PDF debe llegar al usuario que lo pidió por el bot.
+                enviar_whatsapp(numero, texto, media_url=pdf_url)
             except Exception as e:
                 notify_supervisors(f"❌ Error generando listado: {e}")
         _th.Thread(target=_gen_listado, daemon=True).start()
@@ -2393,76 +2405,10 @@ def webhook():
         elif op == '2':
             borrar_estado(numero)
             try:
-                from reportlab.lib.pagesizes import A4
-                from reportlab.lib import colors
-                from reportlab.lib.units import cm
-                from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-                from reportlab.lib.styles import ParagraphStyle
-                from reportlab.lib.enums import TA_CENTER
-                import io as _io
-                from datetime import datetime as _dt
-                _c = get_db(); _cur = _c.cursor()
-                _cur.execute("""
-                    SELECT nombre, stock_actual, unidad, familia
-                    FROM stock_materiales
-                    ORDER BY familia, nombre
-                """)
-                rows = _cur.fetchall()
-                _cur.close(); _c.close()
-                AZUL = colors.HexColor('#1a3a5c')
-                GRIS = colors.HexColor('#f5f5f5')
-                buffer = _io.BytesIO()
-                doc = SimpleDocTemplate(buffer, pagesize=A4,
-                    rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
-                elements = []
-                t_style = ParagraphStyle('T', fontSize=15, textColor=AZUL, fontName='Helvetica-Bold', alignment=TA_CENTER, spaceAfter=6)
-                pie_style = ParagraphStyle('P', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
-                normal = ParagraphStyle('N', fontSize=9)
-                fecha_str = _dt.now().strftime('%d/%m/%Y %H:%M')
-                elements.append(Paragraph("INSTAPALMA — STOCK ALMACÉN ELÉCTRICO", t_style))
-                elements.append(Paragraph(f"Generado: {fecha_str}", ParagraphStyle('F', fontSize=8, textColor=colors.grey, alignment=TA_CENTER, spaceAfter=10)))
-                elements.append(Spacer(1, 0.3*cm))
-                if rows:
-                    filas = [['Artículo', 'Familia', 'Stock', 'Ud.']]
-                    for r in rows:
-                        stock_val = r[1]
-                        if stock_val is None:
-                            stock_str = '0'
-                        else:
-                            stock_f = float(stock_val)
-                            stock_str = (f"{stock_f:.2f}".rstrip('0').rstrip('.') if stock_f != int(stock_f) else str(int(stock_f))).replace('.', ',')
-                        filas.append([r[0] or '', r[3] or '', stock_str, r[2] or ''])
-                    t = Table(filas, colWidths=[8*cm, 3*cm, 2*cm, 2*cm])
-                    t.setStyle(TableStyle([
-                        ('BACKGROUND', (0,0), (-1,0), AZUL),
-                        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-                        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0,0), (-1,-1), 8),
-                        ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-                        ('PADDING', (0,0), (-1,-1), 5),
-                        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, GRIS]),
-                        ('ALIGN', (1,0), (1,-1), 'CENTER'),
-                    ]))
-                    elements.append(t)
-                else:
-                    elements.append(Paragraph("No hay artículos en el inventario.", normal))
-                elements.append(Spacer(1, 0.5*cm))
-                elements.append(Paragraph(f"Instapalma · {fecha_str}", pie_style))
-                doc.build(elements)
-                pdf_bytes = buffer.getvalue()
+                pdf_bytes = generar_pdf_stock(titulo='LISTADO COMPLETO DE STOCK')
                 import uuid as _uuid
-                fname = f"stock_almacen_{_dt.now().strftime('%Y%m%d_%H%M%S')}_{_uuid.uuid4().hex[:6]}"
-                try:
-                    _c2 = get_db(); _cur2 = _c2.cursor()
-                    _cur2.execute("""
-                        INSERT INTO stock_albaranes (numero, pdf_bytes)
-                        VALUES (%s, %s)
-                        ON CONFLICT (numero) DO UPDATE SET pdf_bytes=%s
-                    """, (fname, psycopg2.Binary(pdf_bytes), psycopg2.Binary(pdf_bytes)))
-                    _c2.commit(); _cur2.close(); _c2.close()
-                except Exception as _db_e:
-                    print(f"Error guardando PDF almacén: {_db_e}")
-                url = f"https://bot-production-66b8.up.railway.app/albaran/{fname}.pdf"
+                fname = f"stock_almacen_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{_uuid.uuid4().hex[:6]}"
+                url = subir_pdf_albaran(pdf_bytes, fname)
                 msg.body(f"📦 *Listado completo de almacén:*\n{url}")
             except Exception as e:
                 msg.body(f"❌ Error generando PDF: {e}")
@@ -3784,10 +3730,7 @@ def webhook():
             precio = float(mat[5]) if len(mat) > 5 and mat[5] else 0
             alerta = "\n⚠️ *Stock por debajo del mínimo*" if stock <= minimo and minimo > 0 else ""
             precio_txt = f"\nPrecio unitario: *{precio:.2f} €*".replace(".",",") if precio > 0 else ""
-            def _fmt(v):
-                f = float(v)
-                return (f"{f:.3f}".rstrip('0').rstrip('.')).replace('.', ',')
-            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{_fmt(stock)} {unidad}*\nStock mínimo: {_fmt(minimo)} {unidad}{precio_txt}{alerta}")
+            msg.body(f"🔍 *{nombre_mat}*\nStock actual: *{fmt_unidades(stock)} {unidad}*\nStock mínimo: {fmt_unidades(minimo)} {unidad}{precio_txt}{alerta}")
 
     # ── Flujo vacaciones ──────────────────────────────────────────────────────
     elif paso == 'vac_nombre':
@@ -5982,8 +5925,8 @@ def siguiente_numero_albaran():
 
 # ── PDF albarán interno ───────────────────────────────────────────────────────
 
-def generar_pdf_stock(titulo="LISTADO DE STOCK", familia_filtro=None):
-    """Genera un PDF con el listado de stock, agrupado por familia. Si familia_filtro se filtra por esa familia."""
+def generar_pdf_stock(titulo="LISTADO DE STOCK", familia_filtro=None, busqueda=None):
+    """Genera un PDF con el listado de stock, opcionalmente filtrado por familia o artículo."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import cm
@@ -6011,7 +5954,12 @@ def generar_pdf_stock(titulo="LISTADO DE STOCK", familia_filtro=None):
     pie_style   = ParagraphStyle('p', fontSize=7, textColor=colors.grey, alignment=TA_CENTER)
 
     fecha_str = _dt.now().strftime('%d/%m/%Y %H:%M')
-    filtro_txt = f" — Familia: {familia_filtro}" if familia_filtro else " — Todo el stock"
+    _filtros = []
+    if familia_filtro:
+        _filtros.append(f"Familia: {familia_filtro}")
+    if busqueda:
+        _filtros.append(f"Artículo: {busqueda}")
+    filtro_txt = " — " + " · ".join(_filtros) if _filtros else " — Todo el stock"
     elements.append(Paragraph(titulo, titulo_style))
     elements.append(Paragraph(f"Generado: {fecha_str}{filtro_txt}", sub_style))
     elements.append(HRFlowable(width="100%", thickness=1, color=AZUL))
@@ -6020,22 +5968,21 @@ def generar_pdf_stock(titulo="LISTADO DE STOCK", familia_filtro=None):
     # Obtener materiales de BD
     try:
         conn = get_db(); cur = conn.cursor()
+        _where = ["stock_actual >= 0"]
+        _params = []
         if familia_filtro:
-            cur.execute("""
-                SELECT nombre, unidad, stock_actual, stock_minimo, precio_unitario,
-                       COALESCE(familia, 'General') as familia
-                FROM stock_materiales
-                WHERE LOWER(COALESCE(familia,'General')) = LOWER(%s) AND stock_actual >= 0
-                ORDER BY nombre
-            """, (familia_filtro,))
-        else:
-            cur.execute("""
-                SELECT nombre, unidad, stock_actual, stock_minimo, precio_unitario,
-                       COALESCE(familia, 'General') as familia
-                FROM stock_materiales
-                WHERE stock_actual >= 0
-                ORDER BY COALESCE(familia,'General'), nombre
-            """)
+            _where.append("LOWER(COALESCE(familia,'General')) = LOWER(%s)")
+            _params.append(familia_filtro)
+        if busqueda:
+            _where.append("nombre ILIKE %s")
+            _params.append(f"%{busqueda}%")
+        cur.execute(f"""
+            SELECT nombre, unidad, stock_actual, stock_minimo, precio_unitario,
+                   COALESCE(familia, 'General') as familia
+            FROM stock_materiales
+            WHERE {' AND '.join(_where)}
+            ORDER BY COALESCE(familia,'General'), nombre
+        """, tuple(_params))
         rows = cur.fetchall()
         cur.close(); conn.close()
     except Exception as e:
@@ -6065,9 +6012,9 @@ def generar_pdf_stock(titulo="LISTADO DE STOCK", familia_filtro=None):
                 alerta = ' ⚠️' if stock <= minimo and minimo > 0 else ''
                 filas.append([
                     nombre + alerta,
-                    fmt_cant(stock),
+                    fmt_unidades(stock),
                     unidad,
-                    fmt_cant(minimo) if minimo > 0 else '—',
+                    fmt_unidades(minimo) if minimo > 0 else '—',
                     fmt_cant(precio) if precio > 0 else '—',
                     fmt_cant(valor) if precio > 0 else '—',
                 ])
@@ -6275,7 +6222,7 @@ def buscar_material_msg(texto):
     # Varios candidatos — detectar si son retales del mismo cable
     if detectar_retales(r):
         return None, ('RETALES', r)  # señal especial: es un grupo de retales
-    lista = '\n'.join([f"*{i}.* {x[1]} ({x[3]} {x[2]})" for i, x in enumerate(r, 1)])
+    lista = '\n'.join([f"*{i}.* {x[1]} ({fmt_unidades(x[3])} {x[2]})" for i, x in enumerate(r, 1)])
     return None, ('MULTIPLES', r, f"🔍 Encontré varios materiales:\n{lista}\n\nResponde con el *número* o escribe el nombre más completo.")
 
 
@@ -6352,11 +6299,26 @@ def sugerir_retales(retales, metros_necesarios):
 
 # ── Panel web Almacén ─────────────────────────────────────────────────────────
 
+@app.route('/almacen/stock.pdf')
+def pdf_stock_almacen():
+    from flask import request as req, Response
+    busqueda = req.args.get('q', '').strip()
+    titulo = 'LISTADO DE STOCK' if not busqueda else f'STOCK — {busqueda.upper()}'
+    pdf_bytes = generar_pdf_stock(titulo=titulo, busqueda=busqueda or None)
+    nombre = 'listado_stock' + (f'_{limpiar_nombre_archivo(busqueda)}' if busqueda else '') + '.pdf'
+    return Response(pdf_bytes, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'inline; filename="{nombre}"'})
+
 @app.route('/almacen')
 def panel_almacen():
+    from flask import request as req
+    busqueda = req.args.get('q', '').strip()
     try:
         conn = get_db(); cur = conn.cursor()
-        cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, updated_at FROM stock_materiales ORDER BY nombre")
+        if busqueda:
+            cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, updated_at FROM stock_materiales WHERE nombre ILIKE %s ORDER BY nombre", (f"%{busqueda}%",))
+        else:
+            cur.execute("SELECT id, nombre, unidad, stock_actual, stock_minimo, updated_at FROM stock_materiales ORDER BY nombre")
         materiales = cur.fetchall()
         cur.execute("SELECT tipo, material_nombre, cantidad, unidad, nombre_operario, obra, created_at FROM stock_movimientos ORDER BY created_at DESC LIMIT 100")
         movimientos = cur.fetchall()
@@ -6371,9 +6333,9 @@ def panel_almacen():
         badge = f'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:8px;font-size:11px">⚠️ Bajo mínimo</span>' if minimo > 0 and stock <= minimo else ''
         filas_mat += (
             f"<tr{alerta}>"
-            f"<td>{nombre}</td><td style='text-align:center'>{stock}</td>"
+            f"<td>{nombre}</td><td style='text-align:center'>{fmt_unidades(stock)}</td>"
             f"<td style='text-align:center'>{unidad}</td>"
-            f"<td style='text-align:center'>{minimo}</td>"
+            f"<td style='text-align:center'>{fmt_unidades(minimo)}</td>"
             f"<td>{badge}</td>"
             f"<td><a href='/almacen/material/{mid}/editar' style='color:#1a3a5c;font-size:12px'>✏️</a></td>"
             f"</tr>"
@@ -6388,7 +6350,7 @@ def panel_almacen():
         icono = iconos.get(tipo, '•')
         filas_mov += (
             f"<tr><td>{icono} {tipo.upper()}</td><td>{mat}</td>"
-            f"<td style='text-align:center'>{cant} {unidad}</td>"
+            f"<td style='text-align:center'>{fmt_unidades(cant)} {unidad}</td>"
             f"<td>{op or ''}</td><td>{obra or ''}</td><td>{str(fecha)[:16]}</td></tr>"
         )
     if not filas_mov:
@@ -6417,6 +6379,12 @@ def panel_almacen():
     </div>
 
     <h3 style='color:#1a3a5c;margin-bottom:12px'>Stock de Materiales</h3>
+    <form method='GET' action='/almacen' style='display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap'>
+      <input name='q' value='{busqueda}' placeholder='🔍 Buscar artículo...' style='flex:1;min-width:230px;padding:10px;border:1px solid #ccd5df;border-radius:8px;font-size:14px'>
+      <button class='btn-up' type='submit'>Buscar</button>
+      <a href='/almacen' style='padding:10px 14px;border-radius:8px;background:#eef2f6;color:#1a3a5c;text-decoration:none;font-weight:600'>Limpiar</a>
+      <a href='/almacen/stock.pdf?q={busqueda}' target='_blank' class='btn-up' style='text-decoration:none'>📄 PDF listado</a>
+    </form>
     <table><thead><tr><th>Material</th><th>Stock</th><th>Unidad</th><th>Mínimo</th><th>Estado</th><th></th></tr></thead>
     <tbody>{filas_mat}</tbody></table>
 
