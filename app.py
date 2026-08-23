@@ -4769,6 +4769,20 @@ def dashboard():
 </div>
 </body></html>'''
 
+@app.route('/admin/send-sales-report', methods=['POST'])
+def admin_send_sales_report():
+    """Send a sales-report PDF from the official Instapalma bot to Alberto."""
+    try:
+        data = request.get_json(force=True) or {}
+        media_url = str(data.get('media_url', '')).strip()
+        message = str(data.get('message', '📊 Informe de ventas — El Café de Don Manuel')).strip()
+        if not media_url.startswith(('https://', 'http://')):
+            return {'error': 'media_url required'}, 400
+        enviar_whatsapp('whatsapp:+34690875940', message, media_url=media_url)
+        return {'status': 'sent', 'to': 'whatsapp:+34690875940'}, 200
+    except Exception as e:
+        return {'error': str(e)}, 500
+
 @app.route('/health', methods=['GET'])
 def health():
     return {
