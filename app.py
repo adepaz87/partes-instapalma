@@ -2948,10 +2948,22 @@ def webhook():
                 f"📅 {datos.get('fecha','')} | ⚙️ {datos.get('marca','')} {datos.get('modelo','')}\n"
                 f"⏱️ {datos.get('horas','')} h | {'⚠️ ' + str(nno) + ' incidencias' if nno > 0 else '✅ Sin incidencias'}"
             )
-            if pdf_url:
-                notify_supervisors(caption, media_url=pdf_url)
-            else:
-                notify_supervisors(caption)
+            # En GE TBSA, asegurar copia del informe en el chat personal de Alberto
+            # mediante el número oficial del bot. Deduplicar si ya está en la lista
+            # de supervisores para evitar un envío doble al mismo chat.
+            _ge_destinos = []
+            _ge_vistos = set()
+            for _ge_destino in (SUPERVISOR_WA, SUPERVISOR_WA_2, 'whatsapp:+34690875940'):
+                _ge_numero = ''.join(c for c in str(_ge_destino) if c.isdigit())
+                if not _ge_numero or _ge_numero in _ge_vistos:
+                    continue
+                _ge_vistos.add(_ge_numero)
+                _ge_destinos.append('whatsapp:+' + _ge_numero)
+            for _ge_destino in _ge_destinos:
+                try:
+                    enviar_whatsapp(_ge_destino, caption, media_url=pdf_url)
+                except Exception as _ge_error:
+                    print(f"Error enviando informe GE TBSA por el bot a {_ge_destino}: {_ge_error}")
             # Email con PDF (en thread para no bloquear)
             if mid:
                 import threading as _th_ge
