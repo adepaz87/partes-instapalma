@@ -4716,6 +4716,7 @@ def dashboard():
     <a href="/vacaciones">🏖️ Vacaciones</a>
     <a href="/vehiculos">🚐 Vehículos</a>
     <a href="/mantenimientos-ge">⚡ GE TBSA</a>
+    <a href="/mantenimientos-supermercado">🛒️ Informes supermercados</a>
     <a href="/resumenes">📊 Resúmenes</a>
     <a href="https://site.zapia.com/mfhkvqzy" target="_blank">🛠️ OT TBSA</a>
     <a href="https://drive.google.com/file/d/12U4pynCU_Ob7DxrNA5qKtpxxVFdtYDb5/view?usp=drivesdk" target="_blank">🦺 PRL</a>
