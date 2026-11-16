@@ -71,6 +71,7 @@ def init_db():
                 descripcion TEXT,
                 terminado TEXT,
                 tiempo_restante TEXT,
+                verificaciones_finalizacion TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
@@ -237,6 +238,7 @@ def init_db():
             cur.execute("INSERT INTO app_migrations (clave) VALUES ('ots_dashboard_2026_08_08')")
 
         # Migraciones de columnas
+        cur.execute("ALTER TABLE partes ADD COLUMN IF NOT EXISTS verificaciones_finalizacion TEXT")
         try:
             cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_inicio TYPE VARCHAR(50)")
             cur.execute("ALTER TABLE vacaciones ALTER COLUMN fecha_fin TYPE VARCHAR(50)")
@@ -252,11 +254,12 @@ def init_db():
 
 def guardar_parte(datos, numero_operario):
     try:
+        import json as _json
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, verificaciones_finalizacion)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             datos.get('numero_parte'),
@@ -271,6 +274,7 @@ def guardar_parte(datos, numero_operario):
             datos.get('descripcion'),
             datos.get('terminado'),
             datos.get('tiempo_restante'),
+            _json.dumps(datos.get('verificaciones_finalizacion', {}), ensure_ascii=False),
         ))
         parte_id = cur.fetchone()[0]
         conn.commit()
@@ -406,7 +410,7 @@ def iniciar_parte(numero):
             'operario': numero,
             'cliente': '', 'obra': '', 'operarios': '',
             'albaranes': '', 'material_stock': '', 'descripcion': '',
-            'terminado': '', 'tiempo_restante': '',
+            'terminado': '', 'tiempo_restante': '', 'verificaciones_finalizacion': {},
             'fecha': datetime.now().strftime('%d/%m/%Y')
         })
         cur.execute("""
@@ -561,8 +565,17 @@ MENU_PRINCIPAL = (
     "4️⃣ Vacaciones\n"
     "5️⃣ Resumen fin de mes\n"
     "6️⃣ Vehículos\n"
-    "7️⃣ Mantenimiento GE (TBSA)\n\n"
+    "7️⃣ Mantenimiento\n\n"
     "_Escribe el número o la palabra clave directamente_"
+)
+
+MENU_MANTENIMIENTO = (
+    "🔧 *Mantenimiento*\n\n"
+    "1️⃣ Mantenimiento GE (TBSA)\n"
+    "2️⃣ Mantenimiento preventivo supermercado (TBSA)\n"
+    "3️⃣ Mantenimiento de centros de transformación (CT)\n\n"
+    "0️⃣ Volver al menú principal\n\n"
+    "_Escribe el número o el nombre de la opción_"
 )
 
 MENU_ALMACEN = (
@@ -575,6 +588,68 @@ MENU_ALMACEN = (
 
 def normalizar(texto):
     return texto.strip().lower()
+
+COMPROBACIONES_CIERRE_PARTE = [
+    {
+        'paso': 'cierre_devoluciones',
+        'clave': 'devoluciones_almacen_proveedores',
+        'pregunta': '¿Se han realizado las devoluciones a almacén y a proveedores?',
+        'obligacion': 'Es obligatorio realizar las devoluciones pendientes a almacén y a proveedores',
+        'etiqueta': 'Devoluciones a almacén y proveedores',
+    },
+    {
+        'paso': 'cierre_herramienta',
+        'clave': 'herramienta_obra_devuelta',
+        'pregunta': '¿Se ha devuelto a almacén la herramienta asignada a la obra?',
+        'obligacion': 'Es obligatorio devolver a almacén la herramienta asignada a la obra',
+        'etiqueta': 'Herramienta de obra devuelta a almacén',
+    },
+    {
+        'paso': 'cierre_limpieza',
+        'clave': 'obra_limpia_recogida',
+        'pregunta': '¿La obra está totalmente limpia y recogida?',
+        'obligacion': 'Es obligatorio dejar la obra totalmente limpia y recogida',
+        'etiqueta': 'Obra limpia y recogida',
+    },
+    {
+        'paso': 'cierre_fotos',
+        'clave': 'fotos_trabajo_enviadas',
+        'pregunta': '¿Has enviado las fotos del trabajo realizado al chat de Fotos?',
+        'obligacion': 'Es obligatorio enviar las fotos del trabajo realizado al chat de Fotos',
+        'etiqueta': 'Fotos del trabajo enviadas al chat de Fotos',
+    },
+]
+
+def leer_verificaciones_cierre(datos):
+    import json as _json
+    valor = (datos or {}).get('verificaciones_finalizacion', {})
+    if isinstance(valor, str):
+        try:
+            valor = _json.loads(valor) if valor else {}
+        except (TypeError, ValueError):
+            return {}
+    return valor if isinstance(valor, dict) else {}
+
+def texto_verificaciones_cierre(datos, prefijo='• '):
+    verificaciones = leer_verificaciones_cierre(datos)
+    if not verificaciones:
+        return ''
+    return '\n'.join(
+        f"{prefijo}{item['etiqueta']}: {verificaciones.get(item['clave'], '—')}"
+        for item in COMPROBACIONES_CIERRE_PARTE if item['clave'] in verificaciones
+    )
+
+def serializar_verificaciones_cierre(datos):
+    return json.dumps(leer_verificaciones_cierre(datos), ensure_ascii=False)
+
+def texto_devolucion_material(datos):
+    datos = datos or {}
+    devolucion = str(datos.get('devolucion_almacen') or '').strip()
+    if normalizar(devolucion) in ('no', 'n', 'ninguno', ''):
+        return 'Ninguno'
+    obra = str(datos.get('obra') or '').strip() or 'sin indicar'
+    return f"{devolucion} — Obra de procedencia: {obra}"
+
 def es_confirmacion(texto):
     return normalizar(texto) in ['si', 'sí', 'ok', 'vale', 'correcto', 'confirmado', 's', 'yes']
 def es_cancelacion(texto):
@@ -615,7 +690,7 @@ def generar_pdf_diario(fecha_str=None):
         fecha_dmy = fecha_str
         fecha_ymd = _dtp.strptime(fecha_str, '%d/%m/%Y').strftime('%Y-%m-%d')
     cur.execute(
-        "SELECT cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante "
+        "SELECT cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, verificaciones_finalizacion "
         "FROM partes WHERE fecha IN (%s, %s) ORDER BY id ASC",
         (fecha_dmy, fecha_ymd)
     )
@@ -671,7 +746,7 @@ def generar_pdf_diario(fecha_str=None):
         elements.append(Paragraph('No hay partes registrados para esta fecha.', sub_style))
     else:
         for p in partes:
-            cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante = p
+            cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, verificaciones_raw = p
 
             # Normalizar valores vacíos
             def _v(x): return (x or '').strip()
@@ -684,6 +759,7 @@ def generar_pdf_diario(fecha_str=None):
             descripcion = _v(descripcion)
             terminado   = _v(terminado).upper()
             t_restante  = _v(tiempo_restante)
+            verificaciones_cierre = leer_verificaciones_cierre({'verificaciones_finalizacion': verificaciones_raw})
 
             # Título tarjeta: OBRA (CLIENTE)
             titulo_txt = obra.upper()
@@ -710,8 +786,15 @@ def generar_pdf_diario(fecha_str=None):
                 filas.append([Paragraph('MATERIAL STOCK', lbl_style), Paragraph(mat_stock, val_style)])
             if albaranes and normalizar(albaranes) not in ('ninguno','no',''):
                 filas.append([Paragraph('ALBARANES', lbl_style), Paragraph(albaranes, val_style)])
-            if dev_alm and normalizar(dev_alm) not in ('ninguno','no',''):
-                filas.append([Paragraph('DEV. ALMACÉN', lbl_style), Paragraph(dev_alm, val_style)])
+            if dev_alm and normalizar(dev_alm) not in ('ninguno','no','n',''):
+                dev_texto = f"{dev_alm}<br/>Obra de procedencia: {obra}"
+                filas.append([Paragraph('DEV. ALMACÉN', lbl_style), Paragraph(dev_texto, val_style)])
+            if verificaciones_cierre:
+                cierre_html = '<br/>'.join(
+                    f"{item['etiqueta']}: {verificaciones_cierre[item['clave']]}"
+                    for item in COMPROBACIONES_CIERRE_PARTE if item['clave'] in verificaciones_cierre
+                )
+                filas.append([Paragraph('COMPROBACIONES FINALES', lbl_style), Paragraph(cierre_html, val_style)])
 
             if filas:
                 t_body = Table(filas, colWidths=[COL_L, COL_R])
@@ -931,10 +1014,17 @@ def generar_pdf(datos):
     elements.append(t_mat)
     elements.append(Spacer(1, 0.3*cm))
 
-    # Devolución a almacén
+    # Devolución a almacén, asociada explícitamente a la obra del parte.
     elements.append(Paragraph("DEVOLUCION A ALMACEN", sec_style))
     dev = datos.get('devolucion_almacen', 'Ninguno')
-    if normalizar(dev) == 'ninguno' or not dev:
+    if normalizar(dev) not in ('ninguno','no','n',''):
+        from xml.sax.saxutils import escape as _xml_escape
+        obra_devolucion_style = ParagraphStyle('obra_devolucion', fontSize=9, textColor=AZUL, fontName='Helvetica-Bold', spaceAfter=4)
+        elements.append(Paragraph(
+            f"Obra de procedencia: {_xml_escape(str(datos.get('obra') or 'sin indicar'))}",
+            obra_devolucion_style
+        ))
+    if normalizar(dev) in ('ninguno','no','n','') or not dev:
         dev_rows = [['Cantidad', 'Material / Concepto'], ['—', '—']]
     else:
         import re as _re
@@ -1005,6 +1095,28 @@ def generar_pdf(datos):
     elements.append(t_desc)
     elements.append(Spacer(1, 0.3*cm))
 
+    # Comprobaciones de cierre, solo para trabajos marcados como terminados.
+    verificaciones_cierre = leer_verificaciones_cierre(datos)
+    if verificaciones_cierre:
+        elements.append(Paragraph("COMPROBACIONES FINALES", sec_style))
+        filas_cierre = [['Comprobación', 'Resultado']]
+        filas_cierre.extend([
+            [item['etiqueta'], verificaciones_cierre[item['clave']]]
+            for item in COMPROBACIONES_CIERRE_PARTE if item['clave'] in verificaciones_cierre
+        ])
+        tabla_cierre = Table(filas_cierre, colWidths=[12*cm, 5*cm], repeatRows=1)
+        tabla_cierre.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), AZUL),
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('PADDING', (0,0), (-1,-1), 6),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, GRIS]),
+        ]))
+        elements.append(tabla_cierre)
+        elements.append(Spacer(1, 0.3*cm))
+
     # Estado del trabajo
     terminado = datos.get('terminado', '')
     tiempo_restante = datos.get('tiempo_restante', '')
@@ -1052,6 +1164,8 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
         term  = datos.get('terminado', '-')
         trem  = datos.get('tiempo_restante', '')
         estado = f"✅ Terminado" if 'í' in term.lower() or term.lower()=='si' else f"🔄 No terminado — {trem}"
+        cierre = texto_verificaciones_cierre(datos)
+        bloque_cierre = f"Comprobaciones finales:\n{cierre}\n" if cierre else ''
 
         msg = MIMEMultipart()
         msg['From']    = user
@@ -1067,8 +1181,10 @@ def enviar_email_gmail(datos, numero_operario, pdf_bytes=None):
             f"Operarios:\n{ops}\n"
             f"Albaranes: {datos.get('albaranes','Ninguno')}\n"
             f"Material stock: {datos.get('material_stock','Ninguno')}\n"
+            f"Devolución a almacén: {texto_devolucion_material(datos)}\n"
             f"Descripción: {datos.get('descripcion','-')}\n"
-            f"Estado: {estado}\n\n"
+            f"Estado: {estado}\n"
+            f"{bloque_cierre}\n"
             f"Adjunto el PDF del parte."
         )
         msg.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
@@ -1111,7 +1227,9 @@ def enviar_email_con_pdf(destinatario, asunto, cuerpo, pdf_bytes, nombre_pdf):
         return
     msg_email = MIMEMultipart()
     msg_email['From'] = GMAIL_USER_L
-    msg_email['To'] = destinatario
+    destinatarios = destinatario if isinstance(destinatario, (list, tuple, set)) else [destinatario]
+    destinatarios = [str(d).strip() for d in destinatarios if str(d).strip()]
+    msg_email['To'] = ', '.join(destinatarios)
     msg_email['Subject'] = asunto
     msg_email.attach(MIMEText(cuerpo, 'plain', 'utf-8'))
     part = MIMEBase('application', 'octet-stream')
@@ -1121,8 +1239,9 @@ def enviar_email_con_pdf(destinatario, asunto, cuerpo, pdf_bytes, nombre_pdf):
     msg_email.attach(part)
     with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
         server.login(GMAIL_USER_L, GMAIL_PASS_L)
-        server.sendmail(GMAIL_USER_L, destinatario, msg_email.as_string())
-    print(f"Email enviado OK a {destinatario}: {asunto}")
+        server.sendmail(GMAIL_USER_L, destinatarios, msg_email.as_string())
+    print(f"Email enviado OK a {', '.join(destinatarios)}: {asunto}")
+    return True
 
 
 def enviar_whatsapp(destino, mensaje, media_url=None):
@@ -1258,11 +1377,13 @@ def generar_resumen(datos):
     ops  = _corto(datos.get('operarios', 'Ninguno'), 180)
     albs = _corto(datos.get('albaranes', 'Ninguno'), 100)
     mat  = _corto(datos.get('material_stock', 'Ninguno'), 180)
-    dev  = _corto(datos.get('devolucion_almacen', 'Ninguno'), 100)
+    dev  = _corto(texto_devolucion_material(datos), 150)
     desc = _corto(datos.get('descripcion', '-'), 280)
     term = datos.get('terminado', '-')
     trem = _corto(datos.get('tiempo_restante', ''), 90)
     linea_term = f"✅ Sí" if normalizar(term) in ['si','sí'] else f"🔄 No — {trem}" if trem else f"🔄 No"
+    cierre = texto_verificaciones_cierre(datos)
+    bloque_cierre = f"🧾 *Comprobaciones finales:*\n{cierre}\n" if cierre else ''
     return (
         f"📋 *RESUMEN DEL PARTE*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1275,6 +1396,7 @@ def generar_resumen(datos):
         f"📦 Devolución almacén: {dev}\n"
         f"📝 Descripción: {desc}\n"
         f"🏁 Terminado: {linea_term}\n"
+        f"{bloque_cierre}"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"¿Es correcto? Responde *SÍ* para enviar o *NO* para cancelar."
     )
@@ -1283,11 +1405,13 @@ def finalizar_parte(numero, datos):
     ops  = datos.get('operarios', 'Ninguno')
     albs = datos.get('albaranes', 'Ninguno')
     mat  = datos.get('material_stock', 'Ninguno')
-    dev  = datos.get('devolucion_almacen', 'Ninguno')
+    dev  = texto_devolucion_material(datos)
     desc = datos.get('descripcion', '-')
     term = datos.get('terminado', '-')
     trem = datos.get('tiempo_restante', '')
     linea_term = f"Sí" if normalizar(term) in ['si','sí'] else f"No — {trem}" if trem else "No"
+    cierre = texto_verificaciones_cierre(datos)
+    bloque_cierre = f"🧾 Comprobaciones finales:\n{cierre}\n" if cierre else ''
 
     msg_supervisor = (
         f"📋 *PARTE DE TRABAJO*\n"
@@ -1302,6 +1426,7 @@ def finalizar_parte(numero, datos):
         f"📦 Devolución almacén: {dev}\n"
         f"📝 {desc}\n"
         f"🏁 Terminado: {linea_term}\n"
+        f"{bloque_cierre}"
         f"━━━━━━━━━━━━━━━━━━━━"
     )
     notify_supervisors(msg_supervisor)
@@ -1350,11 +1475,393 @@ MEDICIONES_GE = [
     'Frecuencia (Hz)', 'I L1 (A)', 'I L2 (A)', 'I L3 (A)',
     'Temp. motor',
 ]
+
+# Mantenimiento preventivo de instalaciones de baja tensión en supermercados TBSA.
+# El orden y la redacción proceden de la ficha de mantenimiento entregada.
+CHECKLIST_SUPERMERCADO = [
+    ("Seguridad y documentación", [
+        ("Esquemas unifilares actualizados o accesibles.", "check"),
+        ("Acceso a cuadros libre, seguro y sin almacenamiento delante.", "check"),
+        ("Envolventes, puertas, cerraduras y tapas en buen estado Y PUESTAS A TIERRA.", "check"),
+        ("Señalización de riesgo eléctrico y de maniobra visible.", "check"),
+        ("No hay cables, empalmes ni partes activas accesibles.", "check"),
+    ]),
+    ("Cuadros eléctricos", [
+        ("Limpieza y ausencia de polvo, humedad, corrosión o indicios de plagas.", "check"),
+        ("Protecciones identificadas, accesibles y sin daños.", "check"),
+        ("Sin protecciones puenteadas, anuladas o de calibre aparentemente inadecuado.", "check"),
+        ("Bornes y conexiones sin señales visibles de aflojamiento o deterioro; canalizaciones, prensaestopas y entradas de cables correctamente cerrados; ventilación del cuadro adecuada, con filtros y ventiladores limpios si existen.", "check"),
+        ("Apriete de conexiones comprobado cuando proceda, con instalación consignada y según fabricante.", "check"),
+        ("Termografía realizada bajo condiciones representativas de carga, cuando esté prevista.", "check"),
+    ]),
+    ("Protecciones y maniobra", [
+        ("Interruptores automáticos sin daños y con maniobra correcta.", "check"),
+        ("Diferenciales identificados y en buen estado, sometidos a prueba según procedimiento del fabricante y con resultados registrados cuando se realicen.", "check"),
+        ("Protecciones contra sobretensiones: indicador correcto y sin señal de fin de vida.", "check"),
+        ("Contactores, relés y temporizadores sin ruidos o calentamientos anómalos.", "check"),
+    ]),
+    ("Medidas eléctricas", [
+        ("Tensión entre fases y fase-neutro medida y registrada.", "value"),
+        ("Corriente por fase en alimentaciones principales medida y registrada.", "value"),
+        ("Resistencia de puesta a tierra medida según plan de mantenimiento.", "value"),
+    ]),
+    ("Puesta a tierra y equipotencialidad", [
+        ("Conductores de protección identificados, continuos y sin daños visibles; conexiones de tierra accesibles y protegidas frente a corrosión o aflojamiento.", "check"),
+        ("Elementos metálicos que deban estar unidos equipotencialmente conectados; sin modificaciones o desconexiones no documentadas; mediciones registradas y comparadas con valores de referencia de la instalación.", "check"),
+    ]),
+    ("Líneas, tomas y canalizaciones", [
+        ("Cables y canalizaciones sin golpes, cortes, aplastamientos ni sobrecalentamiento; bandejas, tubos y soportes correctamente fijados.", "check"),
+        ("Tomas, clavijas y cajas sin roturas, holguras o calentamiento.", "check"),
+        ("Sin alargadores o adaptadores usados como instalación permanente.", "check"),
+        ("Circuitos de zonas húmedas o de limpieza protegidos y en buen estado.", "check"),
+        ("Cables de equipos móviles protegidos frente a golpes, humedad y tránsito.", "check"),
+    ]),
+    ("Alumbrado y emergencia", [
+        ("Alumbrado de sala de ventas, almacenes, oficinas y zonas técnicas operativo; luminarias y difusores limpios, fijados y sin daños.", "check"),
+        ("Alumbrado de emergencia y señalización de evacuación sin defectos visibles; pruebas funcionales y de autonomía realizadas conforme al plan y al fabricante.", "check"),
+    ]),
+    ("Equipos y zonas especiales", [
+        ("Cuadros y circuitos de cámaras frigoríficas y congeladores revisados.", "check"),
+        ("Alimentación de climatización y ventilación revisada.", "check"),
+        ("Equipos de panadería, cocina o preparación de alimentos revisados.", "check"),
+        ("Bombas, puertas automáticas, montacargas u otros receptores relevantes revisados.", "check"),
+        ("Alimentación de cajas, comunicaciones y seguridad identificada y revisada. Revisar circuitos SAI.", "check"),
+        ("Revisión de batería de condensadores.", "check"),
+        ("Sin disparos repetidos, conexiones improvisadas ni signos de sobrecarga.", "check"),
+    ]),
+    ("Cierre de visita", [
+        ("Cuadros cerrados y protecciones colocadas.", "check"),
+        ("Equipos y circuitos devueltos a servicio de forma segura.", "check"),
+    ]),
+]
+SUPERMERCADO_ITEMS = [(section, question, kind) for section, items in CHECKLIST_SUPERMERCADO for question, kind in items]
 MENSAJES_VACACIONES = ['vacaciones', 'vacacion', 'solicitar vacaciones', 'pedir vacaciones', 'dias libres', 'días libres']
 MENSAJES_RESUMEN_MES = ['resumen mes', 'resumen del mes', 'resumen mensual', 'cierre mes', 'cierre del mes', 'resumen fin de mes', 'fin de mes']
 MENSAJES_STOCK_SALIDA   = ['salida']
 MENSAJES_STOCK_DEVOL    = ['devolucion', 'devolución']
 MENSAJES_STOCK_CONSULTA = ['consulta']
+
+def _es_supervisor_mantenimiento_prueba(numero):
+    sender = ''.join(ch for ch in str(numero) if ch.isdigit())
+    supervisor = ''.join(ch for ch in str(SUPERVISOR_WA) if ch.isdigit())
+    return bool(sender and supervisor and sender == supervisor)
+
+
+def _start_supermercado(numero, msg, test_mode=False):
+    num = numero.replace('whatsapp:','').replace('+','').strip()
+    conocido = OPERARIOS.get(num, '')
+    cliente = 'Tomás Barreto S.A. · PRUEBA' if test_mode else 'Tomás Barreto S.A.'
+    datos = {'tipo':'mantenimiento_supermercado', 'cliente':cliente,
+             'fecha':datetime.now().strftime('%d/%m/%Y'), 'operario':conocido,
+             'checklist':{}, 'sup_idx':0, 'modo_prueba':bool(test_mode)}
+    try:
+        conn=get_db(); cur=conn.cursor(); raw=json.dumps(datos,ensure_ascii=False)
+        cur.execute("""INSERT INTO conversaciones_db (numero,paso,datos,updated_at)
+                      VALUES (%s,%s,%s::jsonb,NOW())
+                      ON CONFLICT (numero) DO UPDATE SET paso=EXCLUDED.paso,datos=EXCLUDED.datos,updated_at=NOW()""",
+                    (numero, 'sup_centro' if conocido else 'sup_operario', raw))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f'Error iniciando mantenimiento supermercado: {e}')
+    aviso_prueba = ('🧪 *MODO PRUEBA* — usa datos ficticios. Al confirmar no se creará un mantenimiento real ni se enviará correo.\n\n' if test_mode else '')
+    if conocido:
+        msg.body(aviso_prueba+'⚡ *Mantenimiento preventivo · instalación de baja tensión*\nCliente: *'+cliente+'*\nOperario: *'+conocido+'*\n\n¿Cuál es el *centro / supermercado*?')
+    else:
+        msg.body(aviso_prueba+'⚡ *Mantenimiento preventivo · instalación de baja tensión*\nCliente: *'+cliente+'*\n\n¿Cuál es tu *nombre completo*?')
+
+
+def _pregunta_supermercado(idx):
+    section, question, kind = SUPERMERCADO_ITEMS[idx]
+    prefix = f'📋 *{section}*\n🔍 *{idx+1}/{len(SUPERMERCADO_ITEMS)}* — {question}\n\n'
+    if kind == 'value':
+        return prefix + 'Escribe el *valor o medida registrada* (incluye unidades cuando corresponda).'
+    return prefix + 'Responde únicamente *OK* o *NO*.'
+
+
+def _guardar_y_avanzar_supermercado(numero, datos, idx, msg):
+    next_idx = idx + 1
+    if next_idx < len(SUPERMERCADO_ITEMS):
+        set_dato(numero, 'sup_idx', next_idx)
+        set_paso(numero, 'sup_checklist')
+        msg.body(_pregunta_supermercado(next_idx))
+    else:
+        set_paso(numero, 'sup_observaciones')
+        msg.body('✅ Checklist completado.\n\n📝 *OBSERVACIONES*\n\nEscribe las observaciones generales de la visita. Si no hay, escribe *ninguna*.')
+
+
+# Revisión de Centros de Transformación (CT).
+# Las comprobaciones se filtran por tipo de revisión y por disponibilidad de descargo.
+CT_ITEMS = [
+    ('seg_01','A. Seguridad antes de entrar','Orden de trabajo y permiso emitidos; personal cualificado (RD 614/2001).','check',('T','A','3A','C'),False),
+    ('seg_02','A. Seguridad antes de entrar','Guantes aislantes dentro de fecha de ensayo; banqueta, pértiga y detector de tensión verificados; ropa ignífuga y pantalla facial frente al arco disponibles y utilizados.','check',('T','A','3A','C'),False),
+    ('seg_04','A. Seguridad antes de entrar','Extintor accesible y en vigor.','check',('T','A','3A','C'),False),
+    ('seg_05','A. Seguridad — con descargo','Corte visible de todas las fuentes, incluido retorno BT, grupo electrógeno o instalación FV.','check',('T','A','3A','C'),True),
+    ('seg_06','A. Seguridad — con descargo','Bloqueo y señalización de los aparatos de corte.','check',('T','A','3A','C'),True),
+    ('seg_07','A. Seguridad — con descargo','Verificación de ausencia de tensión.','check',('T','A','3A','C'),True),
+    ('seg_08','A. Seguridad — con descargo','Puesta a tierra y en cortocircuito.','check',('T','A','3A','C'),True),
+    ('seg_09','A. Seguridad — con descargo','Delimitación y señalización de la zona de trabajo.','check',('T','A','3A','C'),True),
+    ('t_01','B. Envolvente y auxiliares','Puertas, cerraduras y rejillas de ventilación en buen estado y libres.','check',('T','A','3A'),False),
+    ('t_02','B. Envolvente y auxiliares','Señalización de riesgo eléctrico legible: carteles de «Peligro de muerte», riesgos eléctricos y las 5 reglas de oro.','check',('T','A','3A'),False),
+    ('t_03','B. Envolvente y auxiliares','Local seco y limpio, sin filtraciones ni animales.','check',('T','A','3A'),False),
+    ('t_04','B. Envolvente y auxiliares','Alumbrado normal y de emergencia funcionan.','check',('T','A','3A'),False),
+    ('t_06','C. Celdas MT','Indicadores de presencia de tensión y posición de aparatos coherentes con el esquema.','check',('T','A','3A'),False),
+    ('t_07','C. Celdas MT','Presión de SF6 dentro de la zona verde.','check',('T','A','3A'),False),
+    ('t_10','D. Transformador','Temperatura máxima arrastrada (°C); confirmar que la aguja del indicador quedó repuesta.','value',('T','A','3A'),False),
+    ('t_12','D. Transformador','Nivel de aceite correcto, sin fugas en juntas, radiadores ni válvulas.','check',('T','A','3A'),False),
+    ('t_14','D. Transformador','Sin ruido ni vibración anómalos.','check',('T','A','3A'),False),
+    ('t_15','E. Cuadro BT','Intensidades por fase (A): L1, L2 y L3.','value',('T','A','3A'),False),
+    ('t_17','E. Cuadro BT','Relé de protección sin alarmas ni disparos sin explicar.','check',('T','A','3A'),False),
+    ('a_03','F. Comprobaciones en servicio','Ajustes del relé coinciden con el estudio de selectividad.','check',('A','3A'),False),
+    ('a_06','F. Comprobaciones en servicio','Foso de recogida de aceite y grava cortafuegos sin agua ni restos.','check',('A','3A'),False),
+    ('a_07','G. Comprobaciones con descargo','Limpieza del local, celdas (si son de aire) y aisladores pasatapas.','check',('A','3A'),True),
+    ('a_08','G. Comprobaciones con descargo','Maniobra en vacío de interruptores y seccionadores.','check',('A','3A'),True),
+    ('a_09','G. Comprobaciones con descargo','Enclavamientos mecánicos y por llave impiden maniobras incorrectas.','check',('A','3A'),True),
+    ('a_11','G. Comprobaciones con descargo','Fusibles MT del calibre de proyecto y percutor operativo.','check',('A','3A'),True),
+    ('a_12','G. Comprobaciones con descargo','Comprobar que el disparo por termómetro y el final de carrera de puerta actúan sobre el aparato de corte.','check',('A','3A'),True),
+    ('a_13','G. Comprobaciones con descargo','Apriete de conexiones MT y BT del transformador y puentes.','check',('A','3A'),True),
+    ('a_15','G. Comprobaciones con descargo','Apriete de bornes y embarrados del cuadro BT, sin decoloraciones.','check',('A','3A'),True),
+    ('a_16','G. Comprobaciones con descargo','Disparo del interruptor general BT y diferenciales de auxiliares.','check',('A','3A'),True),
+    ('3a_05','H. Ensayos y documentación ampliados','Aislamiento de cables MT de interconexión (MΩ).','value',('3A',),True),
+    ('3a_06','H. Ensayos y documentación ampliados','Apriete de terminales de cable MT al par del fabricante.','check',('3A',),True),
+    ('3a_07','H. Ensayos y documentación ampliados','Resistencia de tierra de protección (Ω; comparar con proyecto).','value',('3A',),True),
+    ('3a_08','H. Ensayos y documentación ampliados','Resistencia de tierra de servicio (Ω; comparar con proyecto).','value',('3A',),True),
+    ('3a_09','H. Ensayos y documentación ampliados','Independencia entre tierras de protección y servicio (si están separadas).','check_na',('3A',),True),
+    ('a_01','I. Termografía','Termografía con carga ≥ 40 % en terminales, transformador, puentes y cuadro BT; informe adjunto.','check',('A','3A'),False),
+    ('e_01','J. Cierre','Puestas a tierra, herramientas y señalización de la zona retiradas.','check_na',('T','A','3A','C'),False),
+    ('e_02','J. Cierre','Servicio repuesto y tensiones en BT comprobadas.','check_na',('T','A','3A','C'),False),
+    ('e_03','J. Cierre','CT cerrado con llave.','check',('T','A','3A','C'),False),
+    ('e_04','J. Cierre','Defectos anotados con prioridad y plazo.','check',('C',),False),
+    ('e_05','J. Cierre','Parte firmado por mantenedor y titular.','check',('C',),False),
+]
+CT_TIPO_LABELS={'P':'Preventivo','C':'Correctivo','T':'Preventivo','A':'Preventivo','3A':'Preventivo'}
+
+def _fecha_hora_ct():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo('Atlantic/Canary')).strftime('%d/%m/%Y %H:%M')
+    except Exception:
+        return datetime.now().strftime('%d/%m/%Y %H:%M')
+
+def _ct_items(datos):
+    tipo=str(datos.get('tipo_revision','T')).upper()
+    try: version=int(datos.get('ct_form_version',1))
+    except (TypeError,ValueError): version=1
+    # Desde v8, el formulario presupone descargo en todas las revisiones y ya no lo pregunta ni registra.
+    con_descargo=version>=8 or str(datos.get('descargo','')).lower() in ('sí','si','yes','true','1')
+    tipos=('T','A','3A') if tipo=='P' else (tipo,)
+    items=[(key,section,question,kind,requires_discharge) for key,section,question,kind,types,requires_discharge in CT_ITEMS
+           if any(t in types for t in tipos) and (not requires_discharge or con_descargo)]
+    if tipo in ('A','3A') and version<4:
+        items=[item for item in items if not item[0].startswith('t_')]
+    return items
+
+def _ct_borrar_datos_descargo(numero, datos=None):
+    if datos is not None:
+        datos.pop('descargo',None); datos.pop('numero_descargo',None)
+    try:
+        conn=get_db(); cur=conn.cursor()
+        cur.execute("UPDATE conversaciones_db SET datos=datos-'descargo'-'numero_descargo',updated_at=NOW() WHERE numero=%s",(numero,))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f'Error limpiando campos de descargo CT: {e}')
+        try: conn.close()
+        except Exception: pass
+
+def _ct_migrar_sesion(numero, datos, paso):
+    """Migra una sesión CT activa manteniendo sus respuestas y el punto pendiente."""
+    data=dict(datos or {})
+    try: version=int(data.get('ct_form_version',1))
+    except (TypeError,ValueError): version=1
+    version_inicial=version
+    if version>=9: return data,False
+    checklist=dict(data.get('ct_checklist',{}) or {})
+    tipo=str(data.get('tipo_revision','')).upper()
+    if tipo in ('T','A','3A','P'):
+        for key in ('t_08','t_09','t_11','t_16','a_04','a_05','a_10','a_17','3a_01','3a_02','3a_03','3a_04','3a_10','e_04','e_05','seg_03'):
+            checklist.pop(key,None)
+    if paso in ('ct_checklist','ct_incidencia') and tipo in ('T','A','3A','P'):
+        checklist.pop('t_05',None)
+    descargo=str(data.get('descargo','')).lower() in ('sí','si','yes','true','1')
+    skip_current=False
+    if version<2:
+        checklist.pop('t_13',None)
+        if tipo=='T':
+            if paso=='ct_checklist':
+                idx=int(data.get('ct_idx',0))
+                if idx>21: idx-=1
+                elif idx==21: skip_current=True
+                data['ct_idx']=idx
+            elif paso=='ct_incidencia':
+                inc_idx=int(data.get('ct_inc_idx',data.get('ct_idx',0))); idx=int(data.get('ct_idx',inc_idx))
+                if inc_idx>21:
+                    inc_idx-=1
+                    if idx>21: idx-=1
+                    data['ct_inc_idx']=inc_idx; data['ct_idx']=idx
+                elif inc_idx==21:
+                    data['ct_idx']=21; skip_current=True
+        version=2
+    if version<3:
+        checklist.pop('a_14',None)
+        if tipo in ('A','3A') and descargo:
+            if paso=='ct_checklist':
+                idx=int(data.get('ct_idx',0))
+                if idx>21: idx-=1
+                elif idx==21: skip_current=True
+                data['ct_idx']=idx
+            elif paso=='ct_incidencia':
+                inc_idx=int(data.get('ct_inc_idx',data.get('ct_idx',0))); idx=int(data.get('ct_idx',inc_idx))
+                if inc_idx>21:
+                    inc_idx-=1
+                    if idx>21: idx-=1
+                    data['ct_inc_idx']=inc_idx; data['ct_idx']=idx
+                elif inc_idx==21:
+                    data['ct_idx']=21; skip_current=True
+        version=3
+    if version<4:
+        if tipo in ('A','3A') and paso in ('ct_checklist','ct_incidencia'):
+            inicio_trimestrales=9 if descargo else 4
+            num_trimestrales=sum(1 for item in CT_ITEMS if item[0].startswith('t_') and tipo in item[4] and (not item[5] or descargo))
+            if paso=='ct_checklist':
+                idx=int(data.get('ct_idx',0))
+                if idx>=inicio_trimestrales: idx+=num_trimestrales
+                data['ct_idx']=idx
+            else:
+                inc_idx=int(data.get('ct_inc_idx',data.get('ct_idx',0))); idx=int(data.get('ct_idx',inc_idx))
+                if inc_idx>=inicio_trimestrales: inc_idx+=num_trimestrales
+                if idx>=inicio_trimestrales: idx+=num_trimestrales
+                data['ct_inc_idx']=inc_idx; data['ct_idx']=idx
+            version=4
+        elif tipo not in ('A','3A'):
+            version=4
+        else:
+            # Las revisiones ya completas conservan el checklist con el que se iniciaron.
+            version=3
+    if version<5:
+        if tipo in ('T','A','3A') and paso in ('ct_checklist','ct_incidencia'):
+            items_legacy=_ct_items(data)
+            indice_actual=int(data.get('ct_idx',0))
+            clave_actual=items_legacy[indice_actual][0] if 0<=indice_actual<len(items_legacy) else None
+            indice_incidencia=int(data.get('ct_inc_idx',indice_actual))
+            clave_incidencia=items_legacy[indice_incidencia][0] if 0<=indice_incidencia<len(items_legacy) else None
+            data['tipo_revision']='P'; data['tipo_revision_label']='Preventivo'
+            data['ct_form_version']=5
+            items_unificados=_ct_items(data)
+            indices={item[0]:i for i,item in enumerate(items_unificados)}
+            if clave_actual in indices: data['ct_idx']=indices[clave_actual]
+            if clave_incidencia in indices: data['ct_inc_idx']=indices[clave_incidencia]
+            version=5
+        elif tipo=='3A' and version>=4:
+            data['tipo_revision']='P'; data['tipo_revision_label']='Preventivo'; version=5
+        elif tipo not in ('T','A','3A'):
+            version=5
+    if version<7: version=7
+    if version<8 and paso in ('ct_checklist','ct_incidencia'):
+        _ct_borrar_datos_descargo(numero,data)
+        version=8
+    tipo_final=str(data.get('tipo_revision',tipo)).upper()
+    if version_inicial in (7,8) and paso in ('ct_checklist','ct_incidencia') and tipo_final in ('P','T','A','3A'):
+        if paso=='ct_checklist':
+            idx=int(data.get('ct_idx',0))
+            if idx>12: idx-=1
+            elif idx==12: skip_current=True
+            data['ct_idx']=idx
+        else:
+            inc_idx=int(data.get('ct_inc_idx',data.get('ct_idx',0))); idx=int(data.get('ct_idx',inc_idx))
+            if inc_idx>12:
+                inc_idx-=1
+                if idx>12: idx-=1
+            elif inc_idx==12:
+                skip_current=True
+                idx=12
+            data['ct_inc_idx']=inc_idx; data['ct_idx']=idx
+    if paso in ('ct_checklist','ct_incidencia') and version<9: version=9
+    data['ct_checklist']=checklist; data['ct_form_version']=version
+    set_dato(numero,'ct_checklist',checklist)
+    set_dato(numero,'ct_form_version',version)
+    set_dato(numero,'ct_idx',data.get('ct_idx',0))
+    if 'ct_inc_idx' in data: set_dato(numero,'ct_inc_idx',data['ct_inc_idx'])
+    if 'tipo_revision' in data: set_dato(numero,'tipo_revision',data['tipo_revision'])
+    if 'tipo_revision_label' in data: set_dato(numero,'tipo_revision_label',data['tipo_revision_label'])
+    if skip_current: set_paso(numero,'ct_checklist')
+    return data,skip_current
+
+def _pregunta_ct(idx, datos):
+    items=_ct_items(datos)
+    key,section,question,kind,_requires=items[idx]
+    prefix=f'🔌 *{section}*\n📋 *{idx+1}/{len(items)}* — {question}\n\n'
+    if kind=='value': return prefix+'Escribe la lectura con sus unidades. Si no se midió, indica *no medido*.'
+    if kind=='check_na': return prefix+'Responde *OK*, *NO* o *N/A*.'
+    return prefix+'Responde *OK* o *NO*.'
+
+def _ct_avanzar(numero, datos, idx, msg):
+    items=_ct_items(datos)
+    if str(datos.get('tipo_revision','')).upper()=='P':
+        checklist=datos.get('ct_checklist',{}) or {}
+        siguiente=next((i for i,item in enumerate(items) if item[0] not in checklist),len(items))
+    else:
+        siguiente=idx+1
+    if siguiente<len(items):
+        set_dato(numero,'ct_idx',siguiente); set_paso(numero,'ct_checklist')
+        msg.body(_pregunta_ct(siguiente,datos))
+        return
+    tipo=str(datos.get('tipo_revision','T')).upper()
+    if tipo=='C':
+        set_paso(numero,'ct_defecto')
+        msg.body('Describe la *avería o defecto que motivó* la intervención correctiva.')
+    else:
+        set_paso(numero,'ct_observaciones')
+        msg.body('✅ Checklist completado.\n\n📝 Escribe las *observaciones generales* y defectos adicionales. Si no hay, escribe *ninguna*.')
+
+def _iniciar_checklist_ct(numero, datos, msg):
+    _ct_borrar_datos_descargo(numero,datos)
+    datos['ct_idx']=0; datos['ct_checklist']={}; datos['ct_form_version']=9
+    set_dato(numero,'ct_idx',0); set_dato(numero,'ct_checklist',{}); set_dato(numero,'ct_form_version',9)
+    set_paso(numero,'ct_checklist')
+    items=_ct_items(datos)
+    msg.body(f'🛡️ Datos registrados. Revisión: *{CT_TIPO_LABELS.get(str(datos.get("tipo_revision","T")).upper(),"CT")}*.\nSe registrarán {len(items)} comprobaciones y medidas.\n\n'+_pregunta_ct(0,datos))
+
+def _start_ct(numero, msg):
+    num=numero.replace('whatsapp:','').replace('+','').strip()
+    operario=OPERARIOS.get(num,'')
+    datos={'tipo':'mantenimiento_ct','operario':operario,'fecha_hora':_fecha_hora_ct(),
+           'ct_checklist':{},'ct_idx':0,'ct_form_version':9}
+    paso='ct_direccion' if operario else 'ct_operario'
+    try:
+        conn=get_db(); cur=conn.cursor(); raw=json.dumps(datos,ensure_ascii=False)
+        cur.execute("""INSERT INTO conversaciones_db (numero,paso,datos,updated_at)
+                      VALUES (%s,%s,%s::jsonb,NOW())
+                      ON CONFLICT (numero) DO UPDATE SET paso=EXCLUDED.paso,datos=EXCLUDED.datos,updated_at=NOW()""",
+                    (numero,paso,raw))
+        conn.commit(); cur.close(); conn.close()
+    except Exception as e:
+        print(f'Error iniciando mantenimiento CT: {e}')
+        msg.body('⚠️ No pude iniciar el formulario de CT ahora. Inténtalo de nuevo más tarde.')
+        return
+    encabezado=f'🔌 *MANTENIMIENTO DE CENTRO DE TRANSFORMACIÓN*\nFecha y hora: *{datos["fecha_hora"]}*\n'
+    if operario:
+        msg.body(encabezado+f'Operario: *{operario}*\n\nIndica el *CT y su dirección*.')
+    else:
+        msg.body(encabezado+'\nIndica tu *nombre completo*.')
+
+def guardar_mantenimiento_ct(datos):
+    conn=None
+    try:
+        conn=get_db(); cur=conn.cursor()
+        cur.execute("""CREATE TABLE IF NOT EXISTS mantenimiento_ct (
+            id SERIAL PRIMARY KEY, datos JSONB NOT NULL, created_at TIMESTAMP DEFAULT NOW())""")
+        raw=json.dumps(datos,ensure_ascii=False)
+        cur.execute("INSERT INTO mantenimiento_ct (datos) VALUES (%s::jsonb) RETURNING id",(raw,))
+        mid=cur.fetchone()[0]; conn.commit(); cur.close(); conn.close(); return mid
+    except Exception as e:
+        print(f'Error guardando mantenimiento CT: {e}')
+        if conn:
+            try: conn.rollback()
+            except Exception: pass
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except Exception: pass
 
 def iniciar_vacaciones(numero):
     try:
@@ -1715,6 +2222,204 @@ def generar_pdf_mantenimiento_ge(datos):
     return buffer.getvalue()
 
 
+
+def guardar_mantenimiento_supermercado(datos, numero_operario):
+    """Persist a completed low-voltage supermarket maintenance checklist."""
+    conn = None
+    try:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS mantenimiento_supermercado (
+                id SERIAL PRIMARY KEY,
+                cliente TEXT NOT NULL,
+                centro TEXT NOT NULL,
+                fecha VARCHAR(20) NOT NULL,
+                operario TEXT NOT NULL,
+                checklist JSONB NOT NULL,
+                observaciones_generales TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+        checklist_json = json.dumps(datos.get('checklist', {}), ensure_ascii=False)
+        cur.execute("""
+            INSERT INTO mantenimiento_supermercado
+                (cliente, centro, fecha, operario, checklist, observaciones_generales)
+            VALUES (%s,%s,%s,%s,%s::jsonb,%s) RETURNING id
+        """, (datos.get('cliente','Tomás Barreto S.A.'), datos.get('centro',''),
+              datos.get('fecha',''), datos.get('operario') or nombre_operario(numero_operario),
+              checklist_json, datos.get('observaciones_generales','')))
+        mid = cur.fetchone()[0]
+        conn.commit(); cur.close(); conn.close()
+        return mid
+    except Exception as e:
+        print(f"Error guardando mantenimiento supermercado: {e}")
+        if conn:
+            try: conn.rollback()
+            except: pass
+        return None
+    finally:
+        try:
+            if conn: conn.close()
+        except: pass
+
+
+def generar_pdf_mantenimiento_supermercado(datos):
+    """Create a GE-style, paginated PDF of the supermarket maintenance report."""
+    from xml.sax.saxutils import escape
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=1.3*cm, leftMargin=1.3*cm,
+                            topMargin=1.6*cm, bottomMargin=1.5*cm)
+    azul = colors.HexColor('#1a3a5c'); gris = colors.HexColor('#f5f5f5')
+    gris2 = colors.HexColor('#e0e0e0'); rojo = colors.HexColor('#ffebee')
+    styles = {
+        'title': ParagraphStyle('sup_title', fontName='Helvetica-Bold', fontSize=12, leading=15,
+                                textColor=azul, alignment=TA_CENTER),
+        'section': ParagraphStyle('sup_sec', fontName='Helvetica-Bold', fontSize=8,
+                                  leading=10, textColor=colors.white, backColor=azul,
+                                  borderPad=4, spaceBefore=5, spaceAfter=3),
+        'cell': ParagraphStyle('sup_cell', fontName='Helvetica', fontSize=7.2, leading=9),
+        'small': ParagraphStyle('sup_small', fontName='Helvetica', fontSize=8, leading=11),
+        'label': ParagraphStyle('sup_label', fontName='Helvetica-Bold', fontSize=8, leading=10,
+                                textColor=colors.white),
+    }
+    logo_path = os.path.join(os.path.dirname(__file__), 'logo.jpg')
+    logo = RLImage(logo_path, width=4.2*cm, height=4.2*cm/(1024/219)) if os.path.exists(logo_path) else Paragraph('INSTAPALMA', styles['title'])
+    header = Table([[logo, Paragraph('MANTENIMIENTO PREVENTIVO<br/>INSTALACIÓN DE BAJA TENSIÓN', styles['title'])]],
+                   colWidths=[5*cm, 13*cm])
+    header.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),2)]))
+    elements = [header, HRFlowable(width='100%', thickness=2, color=azul, spaceAfter=7)]
+    meta = [
+        [Paragraph('CLIENTE', styles['label']), Paragraph(escape(str(datos.get('cliente',''))), styles['small']),
+         Paragraph('CENTRO', styles['label']), Paragraph(escape(str(datos.get('centro',''))), styles['small'])],
+        [Paragraph('FECHA', styles['label']), Paragraph(escape(str(datos.get('fecha',''))), styles['small']),
+         Paragraph('OPERARIO', styles['label']), Paragraph(escape(str(datos.get('operario',''))), styles['small'])],
+    ]
+    tmeta = Table(meta, colWidths=[2.0*cm, 6.7*cm, 2.0*cm, 7.3*cm])
+    tmeta.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),azul),('BACKGROUND',(2,0),(2,-1),azul),
+        ('GRID',(0,0),(-1,-1),0.45,colors.grey),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1),5),('RIGHTPADDING',(0,0),(-1,-1),5),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('ROWBACKGROUNDS',(1,0),(1,-1),[colors.white,gris])]))
+    elements += [tmeta, Spacer(1,0.25*cm)]
+    checkdata = datos.get('checklist', {}) or {}
+    # Use the stored one-based index, which is the stable identity of a prompt.
+    count_ok = sum(1 for i, (_,_,kind) in enumerate(SUPERMERCADO_ITEMS,1) if kind=='check' and checkdata.get(str(i),{}).get('estado')=='OK')
+    count_no = sum(1 for i, (_,_,kind) in enumerate(SUPERMERCADO_ITEMS,1) if kind=='check' and checkdata.get(str(i),{}).get('estado')=='NO')
+    count_val = sum(1 for i, (_,_,kind) in enumerate(SUPERMERCADO_ITEMS,1) if kind=='value' and str(checkdata.get(str(i),{}).get('valor','')).strip())
+    total_values = sum(1 for _,_,kind in SUPERMERCADO_ITEMS if kind=='value')
+    elements.append(Paragraph(f'COMPROBACIONES · {count_ok} OK · {count_no} NO · {count_val}/{total_values} medidas registradas', styles['section']))
+    for section, items in CHECKLIST_SUPERMERCADO:
+        elements += [Spacer(1,0.1*cm), Paragraph(escape(section), styles['section'])]
+        rows = [[Paragraph('COMPROBACIÓN',styles['label']), Paragraph('ESTADO',styles['label']),
+                 Paragraph('RESPUESTA / VALOR',styles['label']), Paragraph('INCIDENCIA',styles['label'])]]
+        row_indexes=[]
+        for local_item, (question, kind) in enumerate(items):
+            # Locate global one-based index without relying on translated labels.
+            global_i = next(i for i, item in enumerate(SUPERMERCADO_ITEMS,1) if item == (section,question,kind))
+            entry = checkdata.get(str(global_i), {}) or {}
+            if kind == 'check':
+                state = entry.get('estado','')
+                response = '✓' if state == 'OK' else ('✗' if state == 'NO' else '')
+                incident = entry.get('incidencia','')
+            else:
+                state, response, incident = 'VALOR', entry.get('valor',''), ''
+            rows.append([Paragraph(f'{global_i}. {escape(question)}', styles['cell']),
+                         Paragraph(escape(str(state)), styles['cell']),
+                         Paragraph(escape(str(response)), styles['cell']),
+                         Paragraph(escape(str(incident)), styles['cell'])])
+            row_indexes.append((len(rows)-1,state))
+        table = Table(rows, colWidths=[8.0*cm,1.6*cm,4.2*cm,4.2*cm], repeatRows=1, hAlign='LEFT')
+        commands=[('BACKGROUND',(0,0),(-1,0),azul),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                  ('GRID',(0,0),(-1,-1),0.35,colors.grey),('VALIGN',(0,0),(-1,-1),'TOP'),
+                  ('ALIGN',(1,1),(1,-1),'CENTER'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,gris]),
+                  ('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),
+                  ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]
+        for rownum,state in row_indexes:
+            if state=='NO': commands.append(('BACKGROUND',(0,rownum),(-1,rownum),rojo))
+        table.setStyle(TableStyle(commands)); elements.append(table)
+    observations = str(datos.get('observaciones_generales','') or '').strip()
+    elements += [Spacer(1,0.2*cm), Paragraph('OBSERVACIONES', styles['section']), Spacer(1,0.08*cm),
+                 Paragraph(escape(observations or 'Sin observaciones.'), styles['small']), Spacer(1,0.15*cm)]
+    if count_no:
+        conclusion = f'Hay {count_no} comprobación(es) marcada(s) NO; las incidencias consignadas requieren valoración y seguimiento.'
+    else:
+        conclusion = 'Registro de comprobaciones preventivas. Los valores y observaciones consignados reflejan los datos aportados durante la visita.'
+    elements.append(Paragraph(escape(conclusion), styles['small']))
+    def footer(canvas, doc_obj):
+        canvas.saveState(); canvas.setStrokeColor(azul); canvas.setLineWidth(0.5)
+        canvas.line(1.3*cm,1.05*cm,19.7*cm,1.05*cm)
+        canvas.setFont('Helvetica',7); canvas.setFillColor(colors.grey)
+        canvas.drawString(1.3*cm,0.7*cm,'Instapalma SL · Mantenimiento preventivo de baja tensión — Tomás Barreto')
+        canvas.drawRightString(19.7*cm,0.7*cm,f'Página {doc_obj.page}')
+        canvas.restoreState()
+    doc.build(elements, onFirstPage=footer, onLaterPages=footer)
+    return buffer.getvalue()
+
+
+def generar_pdf_mantenimiento_ct(datos):
+    from xml.sax.saxutils import escape
+    buffer=io.BytesIO()
+    azul=colors.HexColor('#1a3a5c'); gris=colors.HexColor('#f5f5f5'); rojo=colors.HexColor('#ffebee')
+    doc=SimpleDocTemplate(buffer,pagesize=A4,rightMargin=1.3*cm,leftMargin=1.3*cm,topMargin=1.5*cm,bottomMargin=1.4*cm)
+    title=ParagraphStyle('ct_title',fontName='Helvetica-Bold',fontSize=13,leading=16,textColor=azul,alignment=TA_CENTER)
+    sec=ParagraphStyle('ct_section',fontName='Helvetica-Bold',fontSize=8,leading=10,textColor=colors.white,backColor=azul,borderPad=4,spaceBefore=5,spaceAfter=3)
+    cell=ParagraphStyle('ct_cell',fontName='Helvetica',fontSize=7.2,leading=9)
+    small=ParagraphStyle('ct_small',fontName='Helvetica',fontSize=8,leading=11)
+    label=ParagraphStyle('ct_label',fontName='Helvetica-Bold',fontSize=7.5,leading=9,textColor=colors.white)
+    logo_path=os.path.join(os.path.dirname(__file__),'logo.jpg')
+    logo=RLImage(logo_path,width=4.2*cm,height=4.2*cm/(1024/219)) if os.path.exists(logo_path) else Paragraph('INSTAPALMA',title)
+    header=Table([[logo,Paragraph('MANTENIMIENTO<br/>CENTRO DE TRANSFORMACIÓN',title)]],colWidths=[5*cm,13.4*cm])
+    header.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),2)]))
+    elements=[header,HRFlowable(width='100%',thickness=2,color=azul,spaceAfter=7)]
+    meta_rows=[
+        [Paragraph('CT / DIRECCIÓN',label),Paragraph(escape(str(datos.get('ct_direccion',''))),small),Paragraph('TITULAR',label),Paragraph(escape(str(datos.get('titular',''))),small)],
+        [Paragraph('Nº CT',label),Paragraph(escape(str(datos.get('numero_ct',''))),small),Paragraph('FECHA Y HORA',label),Paragraph(escape(str(datos.get('fecha_hora',''))),small)],
+        [Paragraph('TIPO',label),Paragraph(escape(str(datos.get('tipo_revision_label',datos.get('tipo_revision','')))),small),Paragraph('OPERARIO',label),Paragraph(escape(str(datos.get('operario',''))),small)],
+        [Paragraph('JEFE / TÉCNICOS',label),Paragraph(escape(str(datos.get('jefe_tecnicos',''))),small),'',''],
+    ]
+    meta=Table(meta_rows,colWidths=[2.5*cm,6.7*cm,2.4*cm,6.8*cm])
+    meta.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),azul),('BACKGROUND',(2,0),(2,2),azul),('SPAN',(1,3),(3,3)),('GRID',(0,0),(-1,-1),0.4,colors.grey),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),('ROWBACKGROUNDS',(1,0),(1,-1),[colors.white,gris])]))
+    elements += [meta,Spacer(1,0.18*cm)]
+    checklist=datos.get('ct_checklist',{}) or {}; items=_ct_items(datos)
+    n_ok=sum(1 for k,_s,_q,kind,_r in items if kind.startswith('check') and checklist.get(k,{}).get('estado')=='OK')
+    n_no=sum(1 for k,_s,_q,kind,_r in items if kind.startswith('check') and checklist.get(k,{}).get('estado')=='NO')
+    n_val=sum(1 for k,_s,_q,kind,_r in items if kind=='value' and str(checklist.get(k,{}).get('valor','')).strip())
+    elements.append(Paragraph(f'RESUMEN · {n_ok} OK · {n_no} NO · {n_val} medidas registradas',sec))
+    grouped={}
+    for item in items: grouped.setdefault(item[1],[]).append(item)
+    for section,rows_items in grouped.items():
+        elements += [Spacer(1,0.1*cm),Paragraph(escape(section),sec)]
+        rows=[[Paragraph('COMPROBACIÓN / MEDIDA',label),Paragraph('RESULTADO',label),Paragraph('INCIDENCIA',label)]]
+        no_rows=[]
+        for key,_section,question,kind,_requires in rows_items:
+            entry=checklist.get(key,{}) or {}
+            if kind=='value': result='MEDIDA: '+str(entry.get('valor',''))
+            else: result=str(entry.get('estado',''))
+            incident=str(entry.get('incidencia',''))
+            rows.append([Paragraph(escape(question),cell),Paragraph(escape(result),cell),Paragraph(escape(incident),cell)])
+            if entry.get('estado')=='NO': no_rows.append(len(rows)-1)
+        table=Table(rows,colWidths=[10.1*cm,3.0*cm,5.3*cm],repeatRows=1,hAlign='LEFT')
+        cmds=[('BACKGROUND',(0,0),(-1,0),azul),('GRID',(0,0),(-1,-1),0.35,colors.grey),('VALIGN',(0,0),(-1,-1),'TOP'),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,gris]),('LEFTPADDING',(0,0),(-1,-1),4),('RIGHTPADDING',(0,0),(-1,-1),4),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]
+        for rownum in no_rows: cmds.append(('BACKGROUND',(0,rownum),(-1,rownum),rojo))
+        table.setStyle(TableStyle(cmds)); elements.append(table)
+    try: ct_version=int(datos.get('ct_form_version',1))
+    except (TypeError,ValueError): ct_version=1
+    if ct_version<8 and str(datos.get('tipo_revision','')).upper() in ('P','A','3A') and str(datos.get('descargo','')).lower() not in ('sí','si','yes','true','1'):
+        elements += [Spacer(1,0.15*cm),Paragraph('⚠️ REVISIÓN INCOMPLETA: no se coordinó el descargo; las actuaciones que lo requieren no se han realizado.',small)]
+    if str(datos.get('tipo_revision','')).upper()=='C':
+        elements += [Spacer(1,0.15*cm),Paragraph('AVERÍA / DEFECTO',sec),Paragraph(escape(str(datos.get('defecto','') or '—')),small),Spacer(1,0.1*cm),Paragraph('TRABAJOS REALIZADOS',sec),Paragraph(escape(str(datos.get('trabajos_realizados','') or '—')),small)]
+    obs=str(datos.get('observaciones','') or '').strip()
+    elements += [Spacer(1,0.15*cm),Paragraph('OBSERVACIONES Y DEFECTOS',sec),Paragraph(escape(obs or 'Sin observaciones.'),small)]
+    seguridad_no=any(k.startswith('seg_') and checklist.get(k,{}).get('estado')=='NO' for k in checklist)
+    conclusion='Revisión registrada con incidencias.' if n_no else 'Revisión registrada sin comprobaciones marcadas NO.'
+    if seguridad_no: conclusion+=' No iniciar o continuar trabajos hasta corregir las condiciones de seguridad señaladas.'
+    elements += [Spacer(1,0.12*cm),Paragraph(escape(conclusion),small)]
+    def footer(canvas,doc_obj):
+        canvas.saveState(); canvas.setStrokeColor(azul); canvas.setLineWidth(0.5); canvas.line(1.3*cm,1.0*cm,19.7*cm,1.0*cm)
+        canvas.setFont('Helvetica',7); canvas.setFillColor(colors.grey); canvas.drawString(1.3*cm,0.65*cm,'Instapalma SL · Informe de mantenimiento de centro de transformación'); canvas.drawRightString(19.7*cm,0.65*cm,f'Página {doc_obj.page}'); canvas.restoreState()
+    doc.build(elements,onFirstPage=footer,onLaterPages=footer)
+    return buffer.getvalue()
+
 def generar_pdf_vehiculo(datos):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4,
@@ -2014,6 +2719,41 @@ def webhook():
 
     # Gestión de OTs TBSA desde el bot.
     if gestionar_ot_whatsapp(numero, incoming_msg, msg):
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Mantenimiento preventivo de supermercados TBSA (producción).
+    _msg_sup_cmd = normalizar(incoming_msg).strip()
+    _paso_sup_actual = str((estado or {}).get('paso',''))
+    if _paso_sup_actual.startswith('sup_') and _msg_sup_cmd in ('cancelar','cancel','cancelar prueba'):
+        borrar_estado(numero)
+        msg.body('✅ Formulario de mantenimiento cancelado. No se guardó ni se envió ningún informe.')
+        return str(resp) if not use_meta else ('OK', 200)
+    if _msg_sup_cmd == 'prueba mantenimiento supermercado':
+        msg.body('El modo de pruebas está desactivado. Para iniciar un mantenimiento, escribe *Mantenimiento supermercado*.')
+        return str(resp) if not use_meta else ('OK', 200)
+    if _msg_sup_cmd == 'mantenimiento supermercado':
+        if _paso_sup_actual.startswith('sup_'):
+            msg.body('Ya hay un formulario activo. Respóndelo o escribe *cancelar* antes de iniciar otro.')
+        elif _paso_sup_actual and _paso_sup_actual != 'menu_principal':
+            msg.body('Tienes otra gestión activa. Termínala o cancélala antes de iniciar el mantenimiento.')
+        else:
+            _start_supermercado(numero, msg, test_mode=False)
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # Mantenimiento de centros de transformación (CT).
+    _msg_ct_cmd=normalizar(incoming_msg).strip()
+    _paso_ct_actual=str((estado or {}).get('paso',''))
+    if _paso_ct_actual.startswith('ct_') and _msg_ct_cmd in ('cancelar','cancel'):
+        borrar_estado(numero)
+        msg.body('✅ Revisión de CT cancelada. No se guardó ningún registro ni se envió correo.')
+        return str(resp) if not use_meta else ('OK', 200)
+    if _msg_ct_cmd in ('mantenimiento ct','mantenimiento de ct','revision ct','revisión ct','mantenimiento centro de transformación','mantenimiento de centro de transformación'):
+        if _paso_ct_actual.startswith('ct_'):
+            msg.body('Ya hay una revisión de CT activa. Respóndela o escribe *cancelar* antes de iniciar otra.')
+        elif _paso_ct_actual and _paso_ct_actual!='menu_principal':
+            msg.body('Tienes otra gestión activa. Termínala o cancélala antes de iniciar la revisión de CT.')
+        else:
+            _start_ct(numero,msg)
         return str(resp) if not use_meta else ('OK', 200)
 
     # Detectar arranque mantenimiento GE
@@ -2593,7 +3333,21 @@ def webhook():
         elif op == '6':
             set_paso(numero, 'vehiculo_menu')
             msg.body("🚗 *Vehículos*\n\nEscribe *vehiculo* para acceder al módulo de mantenimiento.")
-        elif op == '7':
+        elif op in ('7','mantenimiento'):
+            set_paso(numero, 'mantenimiento_menu')
+            msg.body(MENU_MANTENIMIENTO)
+        else:
+            msg.body(MENU_PRINCIPAL)
+        return str(resp) if not use_meta else ('OK', 200)
+
+    # ── Submenú Mantenimiento ────────────────────────────────────────────────
+    if estado and estado.get('paso') == 'mantenimiento_menu':
+        op_mant = normalizar(incoming_msg).strip().replace('(', '').replace(')', '')
+        if op_mant in ('0','menu','volver','volver al menu','atras','cancelar','cancel'):
+            set_paso(numero, 'menu_principal')
+            msg.body(MENU_PRINCIPAL)
+        elif op_mant in ('1','ge','mantenimiento ge','mantenimiento ge tbsa','grupo electrogeno','mantenimiento grupo electrogeno'):
+            borrar_estado(numero)
             num_limpio_ge = numero.replace('whatsapp:','').replace('+','').strip()
             nombre_ge = OPERARIOS.get(num_limpio_ge, '')
             if nombre_ge:
@@ -2602,8 +3356,15 @@ def webhook():
             set_paso(numero, 'ge_localizacion')
             opciones = '\n'.join(f'{i+1}\ufe0f\u20e3 {l}' for i, l in enumerate(LOCALIZACIONES_GE))
             msg.body(f"🔧 *Mantenimiento GE — TBSA*\n\nFecha: {datetime.now().strftime('%d/%m/%Y')}\n\n1️⃣ ¿Cuál es la *ubicación*?\n\n{opciones}")
+        elif op_mant in ('2','supermercado','mantenimiento supermercado','mantenimiento preventivo supermercado','mantenimiento preventivo supermercado tbsa'):
+            borrar_estado(numero)
+            _start_supermercado(numero, msg, test_mode=False)
+        elif op_mant in ('3','ct','mantenimiento ct','mantenimiento de ct','mantenimiento de centros de transformacion','mantenimiento de centros de transformacion ct','centros de transformacion'):
+            borrar_estado(numero)
+            _start_ct(numero,msg)
         else:
-            msg.body(MENU_PRINCIPAL)
+            set_paso(numero, 'mantenimiento_menu')
+            msg.body('No reconocí esa opción.\n\n'+MENU_MANTENIMIENTO)
         return str(resp) if not use_meta else ('OK', 200)
 
     # ── Submenú Almacén ───────────────────────────────────────────────────────
@@ -2753,13 +3514,14 @@ def webhook():
         set_paso(numero, 'devolucion_almacen')
         msg.body(
             "7️⃣ *Devolución a Almacén*\n\n"
-            "¿Devuelves algún material al almacén?\n"
+            f"¿Devuelves algún material al almacén? Si respondes que sí, quedará asociado a la obra *{datos.get('obra') or 'sin indicar'}*.\n"
+            "Indica cada material y cantidad. Si alguno procede de otra obra, escribe esa obra junto al material.\n"
             "_Ejemplo: 10m cable 2.5mm²; 3ud pulsador_\n\n"
             "Si no hay, escribe: *ninguno*"
         )
 
     elif paso == 'devolucion_almacen':
-        val = incoming_msg if normalizar(incoming_msg) != 'ninguno' else 'Ninguno'
+        val = 'Ninguno' if normalizar(incoming_msg) in ('ninguno','no','n') else incoming_msg.strip()
         set_dato(numero, 'devolucion_almacen', val)
         set_paso(numero, 'descripcion')
         msg.body("8️⃣ *Descripción* de los trabajos realizados:")
@@ -2773,14 +3535,52 @@ def webhook():
         if normalizar(incoming_msg) in ['si', 'sí', 's', 'yes']:
             set_dato(numero, 'terminado', 'Sí')
             set_dato(numero, 'tiempo_restante', '')
-            set_paso(numero, 'confirmar')
-            msg.body(generar_resumen(get_estado(numero)['datos']))
+            set_dato(numero, 'verificaciones_finalizacion', {})
+            set_paso(numero, COMPROBACIONES_CIERRE_PARTE[0]['paso'])
+            msg.body(
+                '✅ Trabajo marcado como terminado. Completa estas comprobaciones finales; responde *SÍ* o *NO* a cada una.\n\n'
+                f"1️⃣ {COMPROBACIONES_CIERRE_PARTE[0]['pregunta']}"
+            )
         elif normalizar(incoming_msg) in ['no', 'n']:
             set_dato(numero, 'terminado', 'No')
             set_paso(numero, 'tiempo_restante')
             msg.body("🔟 ¿Cuánto tiempo queda para terminarlo?\n\n_Ejemplo: 2 días, media jornada, 3 horas..._")
         else:
             msg.body("Responde *SÍ* si está terminado o *NO* si falta trabajo.")
+
+    elif paso in [item['paso'] for item in COMPROBACIONES_CIERRE_PARTE]:
+        comprobacion = next(item for item in COMPROBACIONES_CIERRE_PARTE if item['paso'] == paso)
+        respuesta = normalizar(incoming_msg)
+        if respuesta in ('si', 'sí', 's', 'yes'):
+            valor_respuesta = 'Sí'
+        elif respuesta in ('no', 'n'):
+            valor_respuesta = 'No'
+        else:
+            msg.body(f"Responde *SÍ* o *NO*.\n\n{comprobacion['pregunta']}")
+            return str(resp) if not use_meta else ('OK', 200)
+
+        verificaciones = leer_verificaciones_cierre(datos)
+        verificaciones[comprobacion['clave']] = valor_respuesta
+        set_dato(numero, 'verificaciones_finalizacion', verificaciones)
+        aviso = (
+            f"⚠️ {comprobacion['obligacion']} para cumplir las normas de la empresa."
+            if valor_respuesta == 'No' else ''
+        )
+        indice = next(i for i, item in enumerate(COMPROBACIONES_CIERRE_PARTE) if item['paso'] == paso)
+        if indice + 1 < len(COMPROBACIONES_CIERRE_PARTE):
+            siguiente = COMPROBACIONES_CIERRE_PARTE[indice + 1]
+            set_paso(numero, siguiente['paso'])
+            prefijo_aviso = f"{aviso}\n\n" if aviso else ''
+            msg.body(
+                f"{prefijo_aviso}➡️ Siguiente comprobación:\n{indice + 2}️⃣ {siguiente['pregunta']}\n\n"
+                "Responde *SÍ* o *NO*."
+            )
+        else:
+            set_paso(numero, 'confirmar')
+            estado_actual = get_estado(numero) or {}
+            datos_actualizados = estado_actual.get('datos', datos)
+            prefijo_aviso = f"{aviso}\n\n" if aviso else ''
+            msg.body(prefijo_aviso + generar_resumen(datos_actualizados))
 
     elif paso == 'tiempo_restante':
         set_dato(numero, 'tiempo_restante', incoming_msg)
@@ -2948,22 +3748,10 @@ def webhook():
                 f"📅 {datos.get('fecha','')} | ⚙️ {datos.get('marca','')} {datos.get('modelo','')}\n"
                 f"⏱️ {datos.get('horas','')} h | {'⚠️ ' + str(nno) + ' incidencias' if nno > 0 else '✅ Sin incidencias'}"
             )
-            # En GE TBSA, asegurar copia del informe en el chat personal de Alberto
-            # mediante el número oficial del bot. Deduplicar si ya está en la lista
-            # de supervisores para evitar un envío doble al mismo chat.
-            _ge_destinos = []
-            _ge_vistos = set()
-            for _ge_destino in (SUPERVISOR_WA, SUPERVISOR_WA_2, 'whatsapp:+34690875940'):
-                _ge_numero = ''.join(c for c in str(_ge_destino) if c.isdigit())
-                if not _ge_numero or _ge_numero in _ge_vistos:
-                    continue
-                _ge_vistos.add(_ge_numero)
-                _ge_destinos.append('whatsapp:+' + _ge_numero)
-            for _ge_destino in _ge_destinos:
-                try:
-                    enviar_whatsapp(_ge_destino, caption, media_url=pdf_url)
-                except Exception as _ge_error:
-                    print(f"Error enviando informe GE TBSA por el bot a {_ge_destino}: {_ge_error}")
+            if pdf_url:
+                notify_supervisors(caption, media_url=pdf_url)
+            else:
+                notify_supervisors(caption)
             # Email con PDF (en thread para no bloquear)
             if mid:
                 import threading as _th_ge
@@ -2991,6 +3779,303 @@ def webhook():
         else:
             msg.body("Responde *SÍ* para confirmar o *NO* para cancelar.")
 
+
+    # ── Flujo mantenimiento de centros de transformación (CT) ───────────────
+    elif paso == 'ct_operario':
+        if not incoming_msg.strip():
+            msg.body('Indica tu *nombre completo* para registrar la revisión de CT.')
+        else:
+            set_dato(numero,'operario',incoming_msg.strip()); set_paso(numero,'ct_direccion')
+            msg.body('Indica el *CT y su dirección*.')
+
+    elif paso == 'ct_direccion':
+        if not incoming_msg.strip(): msg.body('Indica el *CT y su dirección* para continuar.')
+        else:
+            set_dato(numero,'ct_direccion',incoming_msg.strip()); set_paso(numero,'ct_titular')
+            msg.body('¿Quién es el *titular* del centro de transformación?')
+
+    elif paso == 'ct_titular':
+        if not incoming_msg.strip(): msg.body('Indica el *titular* del CT.')
+        else:
+            set_dato(numero,'titular',incoming_msg.strip()); set_paso(numero,'ct_numero')
+            msg.body('Indica el *número de CT*.')
+
+    elif paso == 'ct_numero':
+        if not incoming_msg.strip(): msg.body('Indica el *número de CT*.')
+        else:
+            set_dato(numero,'numero_ct',incoming_msg.strip()); set_paso(numero,'ct_tipo')
+            msg.body('Selecciona la *categoría del mantenimiento*:\n*P* — preventivo (lista unificada de todas las tareas preventivas)\n*C* — correctivo (flujo separado)')
+
+    elif paso == 'ct_tipo':
+        raw_tipo=normalizar(incoming_msg.strip()).replace(' ','')
+        mapa_ct={'p':'P','preventivo':'P','t':'P','trimestral':'P','a':'P','anual':'P','3a':'P','trienal':'P','trienalampliada':'P','c':'C','correctivo':'C'}
+        tipo_ct=mapa_ct.get(raw_tipo)
+        if not tipo_ct:
+            msg.body('Categoría no válida. Responde *P* (preventivo) o *C* (correctivo).')
+        else:
+            set_dato(numero,'tipo_revision',tipo_ct); set_dato(numero,'tipo_revision_label',CT_TIPO_LABELS[tipo_ct]); set_paso(numero,'ct_jefe')
+            msg.body('Indica el *jefe de trabajo y técnicos* que participan.')
+
+    elif paso == 'ct_jefe':
+        if not incoming_msg.strip(): msg.body('Indica el *jefe de trabajo y técnicos*.')
+        else:
+            set_dato(numero,'jefe_tecnicos',incoming_msg.strip())
+            latest=get_estado(numero)['datos']
+            _iniciar_checklist_ct(numero,latest,msg)
+
+    elif paso in ('ct_descargo','ct_descargo_numero'):
+        # Compatibilidad con sesiones antiguas: se presupone descargo y no se registra respuesta ni referencia.
+        latest=get_estado(numero)['datos']
+        _iniciar_checklist_ct(numero,latest,msg)
+
+    elif paso == 'ct_checklist':
+        datos_ct,skip_ct=_ct_migrar_sesion(numero,datos or {},paso)
+        idx_ct=int(datos_ct.get('ct_idx',0)); items_ct=_ct_items(datos_ct)
+        if skip_ct:
+            msg.body('La comprobación retirada ya no forma parte del formulario. Continúo con la siguiente:\n\n'+_pregunta_ct(idx_ct,datos_ct))
+            return str(resp) if not use_meta else ('OK', 200)
+        if idx_ct<0 or idx_ct>=len(items_ct):
+            set_dato(numero,'ct_idx',0); set_paso(numero,'ct_checklist')
+            msg.body(_pregunta_ct(0,datos_ct))
+        else:
+            key_ct,section_ct,question_ct,kind_ct,_req_ct=items_ct[idx_ct]
+            raw_ct=incoming_msg.strip(); checklist_ct=datos_ct.get('ct_checklist',{}) or {}
+            if kind_ct=='value':
+                if not raw_ct:
+                    msg.body('La lectura no puede quedar vacía. Escribe el valor y sus unidades o *no medido*.\n\n'+_pregunta_ct(idx_ct,datos_ct))
+                else:
+                    checklist_ct[key_ct]={'tipo':'valor','valor':raw_ct,'pregunta':question_ct,'seccion':section_ct}
+                    set_dato(numero,'ct_checklist',checklist_ct); _ct_avanzar(numero,datos_ct,idx_ct,msg)
+            else:
+                answer_ct=normalizar(raw_ct)
+                accepted=('ok','no','na','n/a','no aplica','no procede') if kind_ct=='check_na' else ('ok','no')
+                if answer_ct not in accepted:
+                    choices='*OK*, *NO* o *N/A*' if kind_ct=='check_na' else '*OK* o *NO*'
+                    msg.body(f'Respuesta no válida. Responde {choices}.\n\n'+_pregunta_ct(idx_ct,datos_ct))
+                elif answer_ct=='no':
+                    set_dato(numero,'ct_inc_idx',idx_ct); set_paso(numero,'ct_incidencia')
+                    msg.body('⚠️ Describe la *incidencia observada* para esta respuesta NO; indica qué y dónde, su *prioridad* y el *plazo* previsto. Es obligatorio antes de continuar.\n\n'+question_ct)
+                else:
+                    estado_ct='N/A' if answer_ct in ('na','n/a','no aplica','no procede') else 'OK'
+                    checklist_ct[key_ct]={'tipo':'check','estado':estado_ct,'incidencia':'','pregunta':question_ct,'seccion':section_ct}
+                    set_dato(numero,'ct_checklist',checklist_ct); _ct_avanzar(numero,datos_ct,idx_ct,msg)
+
+    elif paso == 'ct_incidencia':
+        datos_ct,skip_ct=_ct_migrar_sesion(numero,datos or {},paso)
+        items_ct=_ct_items(datos_ct); idx_ct=int(datos_ct.get('ct_inc_idx',datos_ct.get('ct_idx',0)))
+        if skip_ct:
+            msg.body('La comprobación retirada ya no forma parte del formulario; no hace falta registrar esa incidencia. Continúo con:\n\n'+_pregunta_ct(int(datos_ct.get('ct_idx',0)),datos_ct))
+            return str(resp) if not use_meta else ('OK', 200)
+        incident_ct=incoming_msg.strip()
+        if not incident_ct or normalizar(incident_ct) in ('no','ninguno','ninguna','n/a','na','-'):
+            msg.body('La descripción de la incidencia es obligatoria. Indica qué se observó y dónde.')
+        elif idx_ct<0 or idx_ct>=len(items_ct):
+            borrar_estado(numero); msg.body('La sesión perdió su referencia y se canceló sin guardar ningún registro.')
+        else:
+            key_ct,section_ct,question_ct,_kind_ct,_req_ct=items_ct[idx_ct]
+            checklist_ct=datos_ct.get('ct_checklist',{}) or {}
+            checklist_ct[key_ct]={'tipo':'check','estado':'NO','incidencia':incident_ct,'pregunta':question_ct,'seccion':section_ct}
+            set_dato(numero,'ct_checklist',checklist_ct); _ct_avanzar(numero,datos_ct,idx_ct,msg)
+
+    elif paso == 'ct_defecto':
+        if not incoming_msg.strip(): msg.body('Describe la *avería o defecto que motivó* la intervención, indicando prioridad y plazo previsto.')
+        else:
+            set_dato(numero,'defecto',incoming_msg.strip()); set_paso(numero,'ct_trabajos')
+            msg.body('Describe los *trabajos correctivos realizados* y el resultado.')
+
+    elif paso == 'ct_trabajos':
+        if not incoming_msg.strip(): msg.body('Describe los *trabajos correctivos realizados* y el resultado.')
+        else:
+            set_dato(numero,'trabajos_realizados',incoming_msg.strip()); set_paso(numero,'ct_observaciones')
+            msg.body('📝 Escribe las *observaciones adicionales*. Si no hay, escribe *ninguna*.')
+
+    elif paso == 'ct_observaciones':
+        obs_ct='' if normalizar(incoming_msg.strip()) in ('ninguna','ninguno','no','n/a','na') else incoming_msg.strip()
+        set_dato(numero,'observaciones',obs_ct); set_paso(numero,'ct_confirmar')
+        latest_ct,_skip_obs_ct=_ct_migrar_sesion(numero,get_estado(numero)['datos'],'ct_observaciones'); items_ct=_ct_items(latest_ct); checks_ct=latest_ct.get('ct_checklist',{}) or {}
+        n_ok_ct=sum(1 for k,_s,_q,kind,_r in items_ct if kind.startswith('check') and checks_ct.get(k,{}).get('estado')=='OK')
+        n_no_ct=sum(1 for k,_s,_q,kind,_r in items_ct if kind.startswith('check') and checks_ct.get(k,{}).get('estado')=='NO')
+        n_na_ct=sum(1 for k,_s,_q,kind,_r in items_ct if kind.startswith('check') and checks_ct.get(k,{}).get('estado')=='N/A')
+        n_val_ct=sum(1 for k,_s,_q,kind,_r in items_ct if kind=='value' and checks_ct.get(k,{}).get('valor'))
+        summary_ct=(f'🔌 *RESUMEN MANTENIMIENTO CT*\n━━━━━━━━━━━━━━━━━━━━\n🏢 CT: {latest_ct.get("ct_direccion","")} · Nº {latest_ct.get("numero_ct","")}\n'
+                    f'👤 Titular: {latest_ct.get("titular","")}\n📅 {latest_ct.get("fecha_hora","")} · {latest_ct.get("tipo_revision_label","")}\n'
+                    f'👷 Operario: {latest_ct.get("operario","")}\n━━━━━━━━━━━━━━━━━━━━\n✅ OK: {n_ok_ct} · ❌ NO: {n_no_ct} · ➖ N/A: {n_na_ct} · 📏 Medidas: {n_val_ct}\n')
+        try: ct_version_summary=int(latest_ct.get('ct_form_version',1))
+        except (TypeError,ValueError): ct_version_summary=1
+        if ct_version_summary<8 and latest_ct.get('tipo_revision') in ('P','A','3A') and latest_ct.get('descargo')!='Sí':
+            summary_ct+='\n⚠️ *INCOMPLETO:* sin descargo coordinado; no se realizaron las operaciones que lo requieren.\n'
+        if any(k.startswith('seg_') and v.get('estado')=='NO' for k,v in checks_ct.items()):
+            summary_ct+='\n🚨 *ATENCIÓN:* hay requisitos de seguridad marcados NO; no iniciar o continuar los trabajos hasta corregirlos.\n'
+        if latest_ct.get('tipo_revision')=='C':
+            summary_ct+=f'\nAvería: {latest_ct.get("defecto","")}\nTrabajos: {latest_ct.get("trabajos_realizados","")}\n'
+        summary_ct+=f'\n📝 Observaciones: {obs_ct or "Ninguna"}\n━━━━━━━━━━━━━━━━━━━━\n¿Confirmas *guardar la revisión* y generar el PDF? Responde *SÍ* o *NO*.'
+        msg.body(summary_ct)
+
+    elif paso == 'ct_confirmar':
+        if es_confirmacion(incoming_msg):
+            latest_ct,_skip_confirm_ct=_ct_migrar_sesion(numero,get_estado(numero)['datos'],'ct_confirmar'); latest_ct['operario']=latest_ct.get('operario') or nombre_operario(numero)
+            mid_ct=guardar_mantenimiento_ct(latest_ct)
+            if not mid_ct:
+                msg.body('⚠️ No pude guardar el mantenimiento CT. Los datos siguen en el formulario; responde *SÍ* para reintentar o *NO* para cancelar.')
+            else:
+                BOT_URL=os.environ.get('RAILWAY_PUBLIC_DOMAIN','bot-production-66b8.up.railway.app')
+                pdf_url_ct=f'https://{BOT_URL}/mantenimiento-ct/{mid_ct}/pdf'
+                borrar_estado(numero)
+                msg.body(f'✅ *Revisión de CT registrada* (n.º {mid_ct}).\n📄 PDF: {pdf_url_ct}\nNo se envió correo: no hay destinatarios configurados.')
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero); msg.body('❌ Revisión de CT cancelada. No se guardó ningún registro.')
+        else: msg.body('Responde *SÍ* para guardar la revisión y generar el PDF, o *NO* para cancelar.')
+
+    # ── Flujo mantenimiento preventivo supermercado TBSA ────────────────────
+    elif paso == 'sup_operario':
+        if not incoming_msg.strip():
+            msg.body('Indica tu *nombre completo* para registrar el mantenimiento.')
+        else:
+            set_dato(numero, 'operario', incoming_msg.strip())
+            set_paso(numero, 'sup_centro')
+            msg.body('Cliente: *Tomás Barreto S.A.*\n¿Cuál es el *centro / supermercado*?')
+
+    elif paso == 'sup_centro':
+        if not incoming_msg.strip():
+            msg.body('Indica el *centro / supermercado* para continuar.')
+        else:
+            set_dato(numero, 'centro', incoming_msg.strip())
+            set_paso(numero, 'sup_fecha')
+            msg.body(f'Centro: *{incoming_msg.strip()}*\n¿Cuál es la *fecha del mantenimiento*?\nEscribe DD/MM/YYYY o *hoy* ({datetime.now().strftime("%d/%m/%Y")}).')
+
+    elif paso == 'sup_fecha':
+        import re as _re_sup
+        raw_fecha = incoming_msg.strip()
+        if normalizar(raw_fecha) in ('hoy','today'):
+            fecha_sup = datetime.now().strftime('%d/%m/%Y')
+        else:
+            m_sup = _re_sup.match(r'^(\d{1,2})[/\-](\d{1,2})[/\-](\d{2,4})$',raw_fecha)
+            if not m_sup:
+                msg.body('Fecha no válida. Escribe DD/MM/YYYY o *hoy*.')
+                return str(resp) if not use_meta else ('OK', 200)
+            d,mo,y=m_sup.groups(); y=('20'+y) if len(y)==2 else y
+            try:
+                fecha_sup=datetime.strptime(f'{d.zfill(2)}/{mo.zfill(2)}/{y}','%d/%m/%Y').strftime('%d/%m/%Y')
+            except ValueError:
+                msg.body('Fecha no válida. Escribe DD/MM/YYYY o *hoy*.')
+                return str(resp) if not use_meta else ('OK', 200)
+        set_dato(numero,'fecha',fecha_sup); set_dato(numero,'sup_idx',0); set_dato(numero,'checklist',{})
+        set_paso(numero,'sup_checklist')
+        msg.body(f'✅ Datos registrados: *{datos.get("centro","")}* · {fecha_sup}.\nSe realizarán {len(SUPERMERCADO_ITEMS)} comprobaciones.\n\n'+_pregunta_supermercado(0))
+
+    elif paso == 'sup_checklist':
+        idx = int(datos.get('sup_idx',0)); section, question, kind = SUPERMERCADO_ITEMS[idx]
+        raw = incoming_msg.strip(); checklist = datos.get('checklist',{}) or {}
+        if kind == 'value':
+            if not raw:
+                msg.body('El valor no puede quedar vacío. Escribe la medida con sus unidades, o *no medido / no aplica* si procede.\n\n'+_pregunta_supermercado(idx))
+                return str(resp) if not use_meta else ('OK', 200)
+            checklist[str(idx+1)]={'tipo':'valor','valor':raw,'pregunta':question}
+            set_dato(numero,'checklist',checklist)
+            _guardar_y_avanzar_supermercado(numero,datos,idx,msg)
+        else:
+            answer = normalizar(raw)
+            if answer == 'ok':
+                checklist[str(idx+1)]={'tipo':'check','estado':'OK','incidencia':'','pregunta':question}
+                set_dato(numero,'checklist',checklist)
+                _guardar_y_avanzar_supermercado(numero,datos,idx,msg)
+            elif answer == 'no':
+                set_dato(numero,'sup_inc_idx',idx)
+                set_paso(numero,'sup_incidencia')
+                msg.body('⚠️ Indica la *incidencia observada* para esta respuesta NO. Es necesario describirla antes de continuar.\n\n'+question)
+            else:
+                msg.body('Respuesta no válida. Para esta comprobación responde únicamente *OK* o *NO*.\n\n'+_pregunta_supermercado(idx))
+
+    elif paso == 'sup_incidencia':
+        idx=int(datos.get('sup_inc_idx',datos.get('sup_idx',0))); _,question,_kind=SUPERMERCADO_ITEMS[idx]
+        incident=incoming_msg.strip()
+        if not incident or normalizar(incident) in ('no','ninguno','ninguna','n/a','na','-'):
+            msg.body('La descripción de la incidencia es obligatoria y no puede ser solo «no» o «ninguna». Indica qué se ha observado para: '+question)
+            return str(resp) if not use_meta else ('OK', 200)
+        checklist=datos.get('checklist',{}) or {}
+        checklist[str(idx+1)]={'tipo':'check','estado':'NO','incidencia':incident,'pregunta':question}
+        set_dato(numero,'checklist',checklist)
+        _guardar_y_avanzar_supermercado(numero,datos,idx,msg)
+
+    elif paso == 'sup_observaciones':
+        observations = '' if normalizar(incoming_msg.strip()) in ('ninguna','ninguno','no','n/a','na') else incoming_msg.strip()
+        set_dato(numero,'observaciones_generales',observations)
+        set_paso(numero,'sup_confirmar')
+        latest=get_estado(numero)['datos']; checks=latest.get('checklist',{}) or {}
+        n_ok=sum(1 for i,(_,_,k) in enumerate(SUPERMERCADO_ITEMS,1) if k=='check' and checks.get(str(i),{}).get('estado')=='OK')
+        n_no=sum(1 for i,(_,_,k) in enumerate(SUPERMERCADO_ITEMS,1) if k=='check' and checks.get(str(i),{}).get('estado')=='NO')
+        n_values=sum(1 for i,(_,_,k) in enumerate(SUPERMERCADO_ITEMS,1) if k=='value' and checks.get(str(i),{}).get('valor'))
+        total_values=sum(1 for _,_,k in SUPERMERCADO_ITEMS if k=='value')
+        summary=(f'📋 *RESUMEN MANTENIMIENTO PREVENTIVO BT*\n━━━━━━━━━━━━━━━━━━━━\n'
+                 f'🏢 Cliente: {latest.get("cliente","Tomás Barreto S.A.")}\n📍 Centro: {latest.get("centro","")}\n'
+                 f'📅 Fecha: {latest.get("fecha","")}\n👷 Operario: {latest.get("operario","")}\n'
+                 f'━━━━━━━━━━━━━━━━━━━━\n✅ OK: {n_ok} · ❌ NO: {n_no} · 📏 Valores: {n_values}/{total_values}\n')
+        if n_no:
+            summary += '\n⚠️ *Incidencias:*\n'
+            for i,(sec,q,k) in enumerate(SUPERMERCADO_ITEMS,1):
+                entry=checks.get(str(i),{})
+                if k=='check' and entry.get('estado')=='NO': summary += f'• {i}. {q} — {entry.get("incidencia","")}\n'
+        confirm_prompt = '¿Confirmas la prueba ficticia? Responde *SÍ* o *NO*.' if latest.get('modo_prueba') else '¿Confirmas el registro? Responde *SÍ* o *NO*.'
+        summary += f'\n📝 Observaciones: {observations or "Ninguna"}\n━━━━━━━━━━━━━━━━━━━━\n{confirm_prompt}'
+        msg.body(summary)
+
+    elif paso == 'sup_confirmar':
+        if es_confirmacion(incoming_msg):
+            latest=get_estado(numero)['datos']
+            latest['operario']=latest.get('operario') or nombre_operario(numero)
+            if latest.get('modo_prueba') is True:
+                import tempfile as _tempfile, uuid as _uuid
+                pdf=generar_pdf_mantenimiento_supermercado(latest)
+                token=_uuid.uuid4().hex
+                pdf_path=os.path.join(_tempfile.gettempdir(),f'mantto_sup_prueba_{token}.pdf')
+                with open(pdf_path,'wb') as _pdf_file: _pdf_file.write(pdf)
+                BOT_URL=os.environ.get('RAILWAY_PUBLIC_DOMAIN','bot-production-66b8.up.railway.app')
+                pdf_url=f'https://{BOT_URL}/mantenimiento-supermercado-prueba/{token}.pdf'
+                borrar_estado(numero)
+                msg.body(f'🧪 *Prueba completada.* No se creó un mantenimiento real ni se envió ningún correo.\n📄 PDF ficticio: {pdf_url}')
+                return str(resp) if not use_meta else ('OK', 200)
+            if latest.get('modo_prueba') is not False:
+                borrar_estado(numero)
+                msg.body('⚠️ La sesión no es válida para un registro operativo. No se guardó ni se envió ningún informe.')
+                return str(resp) if not use_meta else ('OK', 200)
+            mid=guardar_mantenimiento_supermercado(latest,numero)
+            if not mid:
+                msg.body('⚠️ No se pudo guardar el mantenimiento por un error de base de datos. Los datos siguen en el flujo; inténtalo de nuevo con *SÍ*.')
+                return str(resp) if not use_meta else ('OK', 200)
+            # TBSA maintenance PDF recipients; preserve the configured Alberto copy.
+            recipients=[]
+            for address in [GMAIL_USER,'rbarrera@tomasbarretosa.com','fconcepcion@tomasbarretosa.com','jarodriguez@tomasbarretosa.com']:
+                if address and address.lower() not in [x.lower() for x in recipients]: recipients.append(address)
+            BOT_URL=os.environ.get('RAILWAY_PUBLIC_DOMAIN','bot-production-66b8.up.railway.app')
+            pdf_url=f'https://{BOT_URL}/mantenimiento-supermercado/{mid}/pdf'
+            import threading as _th_sup
+            def _email_supermercado():
+                try:
+                    pdf=generar_pdf_mantenimiento_supermercado(latest)
+                    # Copia del PDF al chat personal de Alberto, enviada desde el bot oficial.
+                    wa_caption=(f'🔧 *Mantenimiento preventivo BT — {latest.get("centro","")}*\n'
+                                f'📅 {latest.get("fecha","")} · 👷 {latest.get("operario","")}\n'
+                                f'📄 Informe registrado n.º {mid}')
+                    try:
+                        enviar_whatsapp('whatsapp:+34690875940', wa_caption, media_url=pdf_url)
+                    except Exception as _wa_sup_exc:
+                        print(f'Error enviando informe supermercado por el bot a Alberto: {_wa_sup_exc}', flush=True)
+                    safe_centro=limpiar_nombre_archivo(latest.get('centro','CENTRO'))[:50]
+                    safe_fecha=limpiar_nombre_archivo(latest.get('fecha',''))
+                    enviar_email_con_pdf(recipients,
+                        f'Mantenimiento preventivo BT — {latest.get("centro","")} — {latest.get("fecha","")}',
+                        f'Adjunto el informe de mantenimiento preventivo de baja tensión.\n\nCliente: {latest.get("cliente","")}\nCentro: {latest.get("centro","")}\nFecha: {latest.get("fecha","")}\nOperario: {latest.get("operario","")}\nPDF: {pdf_url}',
+                        pdf, f'ManttoBT_{safe_centro}_{safe_fecha}.pdf')
+                except Exception as e:
+                    print(f'Error email mantenimiento supermercado: {e}')
+            _th_sup.Thread(target=_email_supermercado,daemon=True).start()
+            borrar_estado(numero)
+            msg.body(f'✅ *Mantenimiento registrado* (n.º {mid}). Se generará el PDF y se enviará por correo a los contactos TBSA configurados.\n📄 PDF: {pdf_url}')
+        elif es_cancelacion(incoming_msg):
+            borrar_estado(numero)
+            msg.body('❌ Mantenimiento cancelado.')
+        else:
+            msg.body('Responde *SÍ* para confirmar el registro o *NO* para cancelar.')
 
     # ── Flujo vehículos ────────────────────────────────────────────────────
     elif paso == 'v_matricula':
@@ -3854,7 +4939,7 @@ def get_parte_by_id(parte_id):
     try:
         conn = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at FROM partes WHERE id=%s", (parte_id,))
+        cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at, verificaciones_finalizacion FROM partes WHERE id=%s", (parte_id,))
         r = cur.fetchone()
         cur.close(); conn.close()
         return r
@@ -3891,10 +4976,10 @@ def listar_partes():
         try:
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at FROM partes ORDER BY TO_DATE(fecha, 'DD/MM/YYYY') DESC, created_at DESC LIMIT 200")
+            cur.execute("SELECT id, numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, created_at, verificaciones_finalizacion FROM partes ORDER BY TO_DATE(fecha, 'DD/MM/YYYY') DESC, created_at DESC LIMIT 200")
             rows = cur.fetchall()
             cur.close(); conn.close()
-            partes = [{'id':r[0],'numero_parte':r[1],'fecha':r[2],'operario':r[3],'cliente':r[4],'obra':r[5],'operarios':r[6],'albaranes':r[7],'material_stock':r[8],'devolucion_almacen':r[9],'descripcion':r[10],'terminado':r[11],'tiempo_restante':r[12],'created_at':str(r[13])} for r in rows]
+            partes = [{'id':r[0],'numero_parte':r[1],'fecha':r[2],'operario':r[3],'cliente':r[4],'obra':r[5],'operarios':r[6],'albaranes':r[7],'material_stock':r[8],'devolucion_almacen':r[9],'devolucion_almacen_obra':r[5] if texto_devolucion_material({'devolucion_almacen':r[9],'obra':r[5]}) != 'Ninguno' else None,'descripcion':r[10],'terminado':r[11],'tiempo_restante':r[12],'created_at':str(r[13]),'verificaciones_finalizacion':r[14]} for r in rows]
             return {'partes': partes, 'total': len(partes)}, 200
         except Exception as e:
             return {'error': str(e)}, 500
@@ -3975,6 +5060,12 @@ def ver_parte(parte_id):
     estado_html = f'<div class="estado-ok">✅ TRABAJO TERMINADO</div>' if es_ok \
         else f'<div class="estado-curso">🔄 EN CURSO — Tiempo restante: {r[12] or "no especificado"}</div>'
     operario_limpio = nombre_operario(r[3] or '')
+    cierre_txt = texto_verificaciones_cierre({'verificaciones_finalizacion': r[14]})
+    if cierre_txt:
+        import html as _html
+        cierre_html = '<div class="campo"><label>Comprobaciones finales</label><div class="val">' + _html.escape(cierre_txt).replace(chr(10), '<br>') + '</div></div>'
+    else:
+        cierre_html = ''
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -4001,8 +5092,9 @@ def ver_parte(parte_id):
     <div class="campo"><label>Operarios y horas</label><div class="val">{r[6] or '—'}</div></div>
     <div class="campo"><label>Albaranes</label><div class="val">{r[7] or '—'}</div></div>
     <div class="campo"><label>Material de stock</label><div class="val">{r[8] or '—'}</div></div>
-    <div class="campo"><label>Devolución a almacén</label><div class="val">{r[9] or '—'}</div></div>
+    <div class="campo"><label>Devolución de material</label><div class="val">{texto_devolucion_material({'devolucion_almacen':r[9],'obra':r[5]})}</div></div>
     <div class="campo"><label>Descripción de trabajos</label><div class="val">{r[10] or '—'}</div></div>
+    {cierre_html}
     {estado_html}
     <a class="btn-pdf" href="/partes/{parte_id}/pdf">⬇ Descargar PDF</a>
   </div>
@@ -4022,7 +5114,8 @@ def descargar_pdf(parte_id):
         'numero_parte': r[1], 'fecha': r[2], 'cliente': r[4], 'obra': r[5],
         'operarios': r[6] or '', 'albaranes': r[7] or '', 'material_stock': r[8] or '',
         'devolucion_almacen': r[9] or 'Ninguno',
-        'descripcion': r[10] or '', 'terminado': r[11] or '', 'tiempo_restante': r[12] or ''
+        'descripcion': r[10] or '', 'terminado': r[11] or '', 'tiempo_restante': r[12] or '',
+        'verificaciones_finalizacion': r[14] or '{}'
     }
     pdf_bytes = generar_pdf(datos)
     fecha_pdf2 = (r[2] or '').replace('/', '-').replace(' ', '')
@@ -4082,13 +5175,14 @@ def servir_albaran_pdf(numero_pdf):
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios, albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, verificaciones_finalizacion)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             datos.get('numero_parte'), datos.get('fecha'), datos.get('operario'),
             datos.get('cliente'), datos.get('obra'), datos.get('operarios'),
             datos.get('albaranes'), datos.get('material_stock'), datos.get('devolucion_almacen','Ninguno'),
-            datos.get('descripcion'), datos.get('terminado'), datos.get('tiempo_restante')
+            datos.get('descripcion'), datos.get('terminado'), datos.get('tiempo_restante'),
+            serializar_verificaciones_cierre(datos)
         ))
         conn.commit(); cur.close(); conn.close()
         return {'status': 'ok'}, 200
@@ -4274,8 +5368,8 @@ def admin_insert_partes():
         for p in datos:
             cur.execute(
                 """INSERT INTO partes (numero_parte, fecha, operario, cliente, obra, operarios,
-                    albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    albaranes, material_stock, devolucion_almacen, descripcion, terminado, tiempo_restante, verificaciones_finalizacion)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     p.get('numero_parte',''),
                     p.get('fecha',''),
@@ -4288,7 +5382,8 @@ def admin_insert_partes():
                     p.get('devolucion_almacen',''),
                     p.get('descripcion',''),
                     p.get('terminado',''),
-                    p.get('tiempo_restante','')
+                    p.get('tiempo_restante',''),
+                    serializar_verificaciones_cierre(p)
                 )
             )
             count += 1
@@ -4473,7 +5568,7 @@ def migrate():
         conn = get_db()
         cur = conn.cursor()
         # Columnas tabla partes
-        for col, tipo in [('material_stock','TEXT'), ('devolucion_almacen','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT'), ('pdf_descargado','BOOLEAN DEFAULT FALSE'), ('pdf_descargado_at','TIMESTAMP')]:
+        for col, tipo in [('material_stock','TEXT'), ('devolucion_almacen','TEXT'), ('terminado','TEXT'), ('tiempo_restante','TEXT'), ('verificaciones_finalizacion','TEXT'), ('pdf_descargado','BOOLEAN DEFAULT FALSE'), ('pdf_descargado_at','TIMESTAMP')]:
             try:
                 cur.execute(f"ALTER TABLE partes ADD COLUMN IF NOT EXISTS {col} {tipo}")
                 conn.commit()
@@ -4600,10 +5695,10 @@ pre,code{font-family:monospace;background:#eef3f7;border-radius:7px}pre{padding:
 <h2>7. Vehículos</h2>
 <p>Escribe <code>vehículo</code> o <code>mantenimiento vehículo</code> y sigue las preguntas del bot.</p>
 
-<h2>8. Mantenimiento GE</h2>
-<p>Para iniciar este formulario escribe exactamente:</p>
-<pre>Mantenimiento GE</pre>
-<p>Después completa ubicación, marca, modelo, horas y las comprobaciones que solicite el bot.</p>
+<h2>8. Mantenimiento</h2>
+<p>En el menú principal, elige <b>Mantenimiento</b> y después selecciona una opción:</p>
+<ul><li><b>Mantenimiento GE (TBSA):</b> completa ubicación, marca, modelo, horas y comprobaciones.</li><li><b>Mantenimiento preventivo supermercado (TBSA):</b> completa los datos del centro y la lista de comprobaciones.</li><li><b>Mantenimiento de centros de transformación (CT):</b> elige Preventivo o Correctivo y sigue el formulario correspondiente.</li></ul>
+<p>También puedes iniciar los formularios con sus comandos directos.</p>
 
 <h2>Si te equivocas</h2>
 <p>Escribe <code>cancelar</code> cuando el bot te ofrezca cancelar. Para reiniciar completamente una conversación, escribe <code>reset</code> o <code>reiniciar</code>.</p>
@@ -4716,7 +5811,6 @@ def dashboard():
     <a href="/vacaciones">🏖️ Vacaciones</a>
     <a href="/vehiculos">🚐 Vehículos</a>
     <a href="/mantenimientos-ge">⚡ GE TBSA</a>
-    <a href="/mantenimientos-supermercado">🛒️ Informes supermercados</a>
     <a href="/resumenes">📊 Resúmenes</a>
     <a href="https://site.zapia.com/mfhkvqzy" target="_blank">🛠️ OT TBSA</a>
     <a href="https://drive.google.com/file/d/12U4pynCU_Ob7DxrNA5qKtpxxVFdtYDb5/view?usp=drivesdk" target="_blank">🦺 PRL</a>
@@ -6122,13 +7216,26 @@ def generar_pdf_albaran(albaran):
 
     from datetime import datetime as dt
     fecha_str = albaran.get('fecha', dt.now().strftime('%d/%m/%Y %H:%M'))
-    obra_label = 'Devuelto por' if es_devol else 'Obra / Cliente'
-    t_cab = Table([
-        ['Nº Albarán', albaran.get('numero','')],
-        ['Fecha', fecha_str],
-        ['Operario', albaran.get('nombre_operario','')],
-        [obra_label, albaran.get('nombre_operario','') if es_devol else albaran.get('obra','')],
-    ], colWidths=[4*cm, 13*cm])
+    obra = str(albaran.get('obra') or '').strip()
+    nombre_operario = albaran.get('nombre_operario','')
+    if es_devol:
+        import re as _re
+        obra_procedencia = _re.sub(r'^\s*DEVOLUCI[ÓO]N\s*(?:[—–-]\s*)?', '', obra, flags=_re.IGNORECASE).strip() or obra or 'No indicada'
+        filas_cabecera = [
+            ['Nº Albarán', albaran.get('numero','')],
+            ['Fecha', fecha_str],
+            ['Operario', nombre_operario],
+            ['Obra de procedencia', obra_procedencia],
+            ['Devuelto por', nombre_operario],
+        ]
+    else:
+        filas_cabecera = [
+            ['Nº Albarán', albaran.get('numero','')],
+            ['Fecha', fecha_str],
+            ['Operario', nombre_operario],
+            ['Obra / Cliente', obra],
+        ]
+    t_cab = Table(filas_cabecera, colWidths=[4*cm, 13*cm])
     t_cab.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(0,-1),AZUL),
         ('TEXTCOLOR',(0,0),(0,-1),colors.white),
@@ -6575,6 +7682,80 @@ def pdf_albaran(aid):
     from flask import Response
     return Response(pdf_bytes, mimetype='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{nombre_f}"'})
+
+
+@app.route('/mantenimiento-supermercado-prueba/<token>.pdf')
+def pdf_mantenimiento_supermercado_prueba(token):
+    import re as _re_test, tempfile as _tempfile, time as _time
+    if not _re_test.fullmatch(r'[0-9a-f]{32}', token):
+        return 'No encontrado',404
+    pdf_path=os.path.join(_tempfile.gettempdir(),f'mantto_sup_prueba_{token}.pdf')
+    if not os.path.isfile(pdf_path):
+        return 'No encontrado',404
+    if _time.time()-os.path.getmtime(pdf_path)>86400:
+        try: os.remove(pdf_path)
+        except OSError: pass
+        return 'No encontrado',404
+    from flask import Response
+    with open(pdf_path,'rb') as _pdf_file: pdf_bytes=_pdf_file.read()
+    return Response(pdf_bytes,mimetype='application/pdf',headers={
+        'Content-Disposition':'attachment; filename="Mantenimiento_supermercado_PRUEBA.pdf"',
+        'Cache-Control':'no-store'})
+
+
+@app.route('/mantenimiento-supermercado/<int:mid>/pdf')
+def pdf_mantenimiento_supermercado(mid):
+    try:
+        conn=get_db(); cur=conn.cursor()
+        cur.execute("SELECT cliente,centro,fecha,operario,checklist,observaciones_generales FROM mantenimiento_supermercado WHERE id=%s",(mid,))
+        row=cur.fetchone(); cur.close(); conn.close()
+        if not row: return 'No encontrado',404
+        checklist=row[4] if isinstance(row[4],dict) else (json.loads(row[4]) if row[4] else {})
+        datos={'cliente':row[0] or 'Tomás Barreto S.A.','centro':row[1] or '', 'fecha':row[2] or '',
+               'operario':row[3] or '', 'checklist':checklist,'observaciones_generales':row[5] or ''}
+        pdf=generar_pdf_mantenimiento_supermercado(datos)
+        from flask import Response
+        name=limpiar_nombre_archivo(f'ManttoBT_{datos["centro"]}_{datos["fecha"]}.pdf')
+        return Response(pdf,mimetype='application/pdf',headers={'Content-Disposition':f'inline; filename="{name}"'})
+    except Exception as e:
+        print(f'Error generando PDF mantenimiento supermercado: {e}')
+        return 'Error generando el informe',500
+
+
+@app.route('/mantenimiento-ct/<int:mid>/pdf')
+def pdf_mantenimiento_ct(mid):
+    try:
+        conn=get_db(); cur=conn.cursor()
+        cur.execute('SELECT datos FROM mantenimiento_ct WHERE id=%s',(mid,))
+        row=cur.fetchone(); cur.close(); conn.close()
+        if not row: return 'No encontrado',404
+        datos_ct=row[0] if isinstance(row[0],dict) else (json.loads(row[0]) if row[0] else {})
+        pdf=generar_pdf_mantenimiento_ct(datos_ct)
+        from flask import Response
+        filename=limpiar_nombre_archivo(f'Mantenimiento_CT_{datos_ct.get("numero_ct","CT")}_{datos_ct.get("fecha_hora","")}.pdf')
+        return Response(pdf,mimetype='application/pdf',headers={'Content-Disposition':f'inline; filename="{filename}"'})
+    except Exception as e:
+        print(f'Error generando el PDF de mantenimiento CT: {e}')
+        return 'Error generando el informe',500
+
+@app.route('/mantenimientos-supermercado')
+def panel_mantenimientos_supermercado():
+    try:
+        conn=get_db(); cur=conn.cursor()
+        cur.execute("SELECT id,fecha,centro,operario,checklist FROM mantenimiento_supermercado ORDER BY created_at DESC")
+        rows=cur.fetchall(); cur.close(); conn.close()
+    except Exception as e:
+        print(f'Error listando mantenimientos supermercado: {e}')
+        rows=[]
+    import html as _html
+    html_rows=[]
+    for mid,fecha,centro,operario,checklist in rows:
+        data=checklist if isinstance(checklist,dict) else (json.loads(checklist) if checklist else {})
+        nno=sum(1 for entry in data.values() if entry.get('estado')=='NO')
+        badge=f'<span style="color:#c62828">⚠️ {nno} incidencias</span>' if nno else '<span style="color:#2e7d32">✅ Sin incidencias</span>'
+        html_rows.append(f'<tr><td>{_html.escape(str(fecha or "—"))}</td><td>{_html.escape(str(centro or "—"))}</td><td>{_html.escape(str(operario or "—"))}</td><td>{badge}</td><td><a href="/mantenimiento-supermercado/{mid}/pdf">📄 PDF</a></td></tr>')
+    body=''.join(html_rows) or '<tr><td colspan="5">Sin mantenimientos registrados</td></tr>'
+    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mantenimiento preventivo BT</title><style>{CSS_BASE}</style></head><body><header><div><h1>⚡ Mantenimiento preventivo BT · Supermercados TBSA</h1><p>Instalaciones de baja tensión</p></div></header><div class="wrap" style="padding-top:20px"><table><thead><tr><th>Fecha</th><th>Centro</th><th>Operario</th><th>Resultado</th><th>Informe</th></tr></thead><tbody>{body}</tbody></table><p style="margin-top:20px"><a href="/mantenimientos-ge">⚡ Mantenimientos GE</a> · <a href="/">Inicio</a></p></div></body></html>"""
 
 
 @app.route('/mantto_ge/<int:mid>/pdf')
