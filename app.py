@@ -1336,7 +1336,7 @@ def finalizar_parte(numero, datos):
 MENSAJES_VEHICULO         = ['vehiculo', 'vehículo', 'coche', 'camion', 'camión', 'furgoneta', 'mantenimiento vehiculo']
 MENSAJES_MANTENIMIENTO_GE = ['mantenimiento ge', 'mantto ge', 'ge tbsa', 'grupo electrogeno', 'grupo electrógeno', 'tbsa ge']
 MENSAJES_MANTTO     = ['mantenimiento', 'mantto', 'grupo electrogeno', 'grupo electrógeno', 'generador', 'ge tbsa', 'tbsa']
-LOCALIZACIONES_GE   = ['Spar Mederos', 'Spar El Paso', 'Spar Triana', 'Central de Servicios', 'Grupo Móvil']
+LOCALIZACIONES_GE   = ['Spar Mederos', 'Spar El Paso', 'Spar Triana', 'Central de Servicios', 'Grupo Móvil', 'GE Áridos El Riachuelo']
 CHECKLIST_GE = [
     'Nivel aceite', 'Nivel refrigerante', 'Nivel combustible',
     'Estado batería', 'Tensión batería', 'Cargador batería',
