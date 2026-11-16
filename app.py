@@ -8602,3 +8602,7 @@ def web_herramienta_pdf(modo):
             headers={'Content-Disposition': f'inline; filename="herramienta_{modo}.pdf"'})
     except Exception as e:
         return f"Error: {e}", 500
+
+# ── Envío del informe operativo en PDF por WhatsApp (módulo independiente) ────
+from informe_pdf import informe_pdf_bp
+app.register_blueprint(informe_pdf_bp)
