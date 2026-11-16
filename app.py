@@ -4052,6 +4052,14 @@ def webhook():
             def _email_supermercado():
                 try:
                     pdf=generar_pdf_mantenimiento_supermercado(latest)
+                    # Copia del PDF al chat personal de Alberto, enviada desde el bot oficial.
+                    wa_caption=(f'🔧 *Mantenimiento preventivo BT — {latest.get("centro","")}*\n'
+                                f'📅 {latest.get("fecha","")} · 👷 {latest.get("operario","")}\n'
+                                f'📄 Informe registrado n.º {mid}')
+                    try:
+                        enviar_whatsapp('whatsapp:+34690875940', wa_caption, media_url=pdf_url)
+                    except Exception as _wa_sup_exc:
+                        print(f'Error enviando informe supermercado por el bot a Alberto: {_wa_sup_exc}', flush=True)
                     safe_centro=limpiar_nombre_archivo(latest.get('centro','CENTRO'))[:50]
                     safe_fecha=limpiar_nombre_archivo(latest.get('fecha',''))
                     enviar_email_con_pdf(recipients,
