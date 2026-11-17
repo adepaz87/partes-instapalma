@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -I /mnt/project-files/envio-pdf-whatsapp/enviar.py:*)",
+      "Bash(curl -sS -m 60 -o * https://bot-production-66b8.up.railway.app/partes/diario/*)"
+    ]
+  }
+}
