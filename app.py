@@ -8606,3 +8606,7 @@ def web_herramienta_pdf(modo):
 # ── Envío del informe operativo en PDF por WhatsApp (módulo independiente) ────
 from informe_pdf import informe_pdf_bp
 app.register_blueprint(informe_pdf_bp)
+
+# ── Avisos por WhatsApp a trabajadores y clientes (módulo independiente) ─────
+from avisos import avisos_bp
+app.register_blueprint(avisos_bp)
