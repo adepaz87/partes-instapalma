@@ -14,8 +14,10 @@ POST /api/avisos/enviar
     "texto":    texto libre del aviso (máx. 1600 caracteres).
     "pdf_base64" o "pdf_url" (https):  PDF opcional que va adjunto.
     "nombre":   nombre del PDF que verá el destinatario (opcional).
-    "plantilla": {"sid": "HX...", "variables": {"1": "...", "2": "..."}}
-                Opcional. Plantilla aprobada de WhatsApp. Es lo que hay que usar
+    "plantilla": {"nombre": "ot_cerrada", "variables": {"1": "...", "2": "..."}}
+                (o {"sid": "HX...", ...}). Opcional. Plantilla aprobada de WhatsApp
+                (ver plantillas.py). Con documento_mantenimiento se manda también
+                el PDF y el bot rellena la variable 4. Es lo que hay que usar
                 con quien no haya escrito al bot en las últimas 24 h (clientes),
                 porque WhatsApp no deja mandarles texto libre.
   Respuesta: {"resultados": [{"to": "+34...", "status": "queued", "sid": "SM..."},
@@ -174,12 +176,26 @@ def enviar_aviso():
     # Contenido: plantilla aprobada o texto libre (+ PDF opcional)
     texto = str(data.get('texto') or '').strip()
     plantilla = data.get('plantilla') or None
+    con_pdf_en_plantilla = False
     if plantilla is not None:
-        if not isinstance(plantilla, dict) or not re.fullmatch(r'HX[0-9a-fA-F]{32}', str(plantilla.get('sid', ''))):
-            return {'error': 'plantilla.sid no válido (HX...)'}, 400
+        if not isinstance(plantilla, dict):
+            return {'error': 'plantilla debe ser un objeto'}, 400
         variables = plantilla.get('variables') or {}
         if not isinstance(variables, dict):
             return {'error': 'plantilla.variables debe ser un objeto'}, 400
+        plantilla = {'sid': plantilla.get('sid'), 'nombre': plantilla.get('nombre'),
+                     'variables': {str(k): str(v) for k, v in variables.items()}}
+        if plantilla['nombre'] and not plantilla['sid']:
+            from plantillas import sid_de_plantilla, es_plantilla_con_pdf, ErrorTwilio
+            try:
+                plantilla['sid'] = sid_de_plantilla(str(plantilla['nombre']))
+            except ErrorTwilio as e:
+                return {'error': f'no se pudo consultar la plantilla: {e}'}, 502
+            if not plantilla['sid']:
+                return {'error': f"la plantilla {plantilla['nombre']} no existe; créala con /api/avisos/plantillas/crear"}, 400
+            con_pdf_en_plantilla = es_plantilla_con_pdf(str(plantilla['nombre']))
+        if not re.fullmatch(r'HX[0-9a-fA-F]{32}', str(plantilla['sid'] or '')):
+            return {'error': 'plantilla.sid no válido (HX...) o falta plantilla.nombre'}, 400
     if len(texto) > MAX_TEXTO:
         return {'error': f'texto demasiado largo (máx. {MAX_TEXTO})'}, 400
 
@@ -195,14 +211,17 @@ def enviar_aviso():
         if not nombre.lower().endswith('.pdf'):
             nombre += '.pdf'
         media_url = _publicar_pdf(pdf, nombre)
+    if con_pdf_en_plantilla:
+        from plantillas import VARIABLE_PDF
+        if not media_url:
+            return {'error': f"la plantilla {plantilla['nombre']} necesita el PDF (pdf_base64 o pdf_url)"}, 400
+        plantilla['variables'][VARIABLE_PDF] = media_url.split('/avisos-pdf/', 1)[1]
 
     kwargs = {'from_': os.environ.get('TWILIO_WA_NUMBER', 'whatsapp:+19784402048')}
     if plantilla is not None:
         kwargs['content_sid'] = plantilla['sid']
-        if plantilla.get('variables'):
-            kwargs['content_variables'] = json.dumps(
-                {str(k): str(v) for k, v in plantilla['variables'].items()},
-                ensure_ascii=False)
+        if plantilla['variables']:
+            kwargs['content_variables'] = json.dumps(plantilla['variables'], ensure_ascii=False)
     else:
         if texto:
             kwargs['body'] = texto

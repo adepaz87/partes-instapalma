@@ -8610,3 +8610,7 @@ app.register_blueprint(informe_pdf_bp)
 # ── Avisos por WhatsApp a trabajadores y clientes (módulo independiente) ─────
 from avisos import avisos_bp
 app.register_blueprint(avisos_bp)
+
+# ── Plantillas de WhatsApp para avisos a clientes (Content API de Twilio) ────
+from plantillas import plantillas_bp
+app.register_blueprint(plantillas_bp)
